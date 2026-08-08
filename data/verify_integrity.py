@@ -13,14 +13,14 @@ from pathlib import Path
 
 
 def load_md5_index(md5_tsv: Path) -> dict[str, str]:
-    """Return {urs_lower: md5} from md5.tsv.gz (RNAcentral format: md5<TAB>urs)."""
+    """Return {urs_lower: md5} from md5.tsv.gz (RNAcentral format: URS<TAB>md5)."""
     idx = {}
     opener = gzip.open if str(md5_tsv).endswith(".gz") else open
     with opener(md5_tsv, "rt") as f:
         for line in f:
             fields = line.strip().split()
             if len(fields) >= 2:
-                md5, urs = fields[0], fields[1]
+                urs, md5 = fields[0], fields[1]
                 idx[urs.lower()] = md5
     return idx
 
@@ -62,6 +62,7 @@ def main() -> None:
     # reservoir sampling over all sequences
     sample = []
     seen = 0
+    rng = random.Random(args.seed)
     for header, seq in iter_fasta(args.fasta):
         urs = header.split()[0]
         if len(sample) < args.n:

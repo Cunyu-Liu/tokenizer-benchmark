@@ -1,4 +1,4 @@
-"""Phase 1: canonicalization of RNAcentral release active FASTA.
+"""Phase 1: canonicalization of RNAcentral release active FASTA (streaming).
 
 Turns a release FASTA (headers: `>URS0000XXXX <RNA type> from <N> species`)
 into a sequence-level Parquet with canonicalization, QC status, and length bin.
@@ -9,6 +9,8 @@ Canonicalization rules (Goal §5):
 - primary alphabet A/C/G/U
 - sequences with other IUPAC chars go to QC ledger (ambiguity), excluded from primary
 - length bins: 16-4096 primary; 4097-16384 length-OOD; >16384 descriptive only
+
+Streams batches to disk to bound memory use at ~40M-sequence scale.
 """
 from __future__ import annotations
 
@@ -27,7 +29,6 @@ PRIMARY_ALPHA = frozenset("ACGU")
 @dataclass(frozen=True)
 class CanonicalResult:
     accession: str
-    raw_seq: str
     canonical_seq: str
     canonical_hash: str
     raw_hash: str
@@ -57,7 +58,6 @@ def canonicalize_one(accession: str, raw_seq: str, rna_type: str) -> CanonicalRe
         length_bin = ">16384"
     return CanonicalResult(
         accession=accession,
-        raw_seq=raw_seq,
         canonical_seq=canon,
         canonical_hash=sha256_hex(canon),
         raw_hash=raw_hash,
@@ -75,10 +75,7 @@ def parse_header(header: str) -> tuple[str, str]:
     """
     parts = header.split()
     accession = parts[0] if parts else ""
-    # RNA type is the token(s) between accession and 'from'. Take the first token.
-    rna_type = "unknown"
-    if len(parts) >= 2:
-        rna_type = parts[1]
+    rna_type = parts[1] if len(parts) >= 2 else "unknown"
     return accession, rna_type
 
 
@@ -87,21 +84,21 @@ def iter_fasta(path: Path):
     opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rt") as f:
         header = None
-        seq_chunks = []
+        chunks = []
         for line in f:
             line = line.strip()
             if line.startswith(">"):
-                if header is not None and seq_chunks:
-                    yield header, "".join(seq_chunks)
+                if header is not None and chunks:
+                    yield header, "".join(chunks)
                 header = line[1:]
-                seq_chunks = []
+                chunks = []
             elif line:
-                seq_chunks.append(line)
-        if header is not None and seq_chunks:
-            yield header, "".join(seq_chunks)
+                chunks.append(line)
+        if header is not None and chunks:
+            yield header, "".join(chunks)
 
 
-def build_arrow_table(records: list[CanonicalResult]) -> pa.Table:
+def records_to_table(records: list[CanonicalResult]) -> pa.Table:
     return pa.table(
         {
             "accession": [r.accession for r in records],
@@ -116,34 +113,64 @@ def build_arrow_table(records: list[CanonicalResult]) -> pa.Table:
     )
 
 
+_SCHEMA = pa.table(
+    {
+        "accession": pa.array([], pa.string()),
+        "rna_type": pa.array([], pa.string()),
+        "raw_sequence_hash": pa.array([], pa.string()),
+        "canonical_sequence_hash": pa.array([], pa.string()),
+        "canonical_sequence": pa.array([], pa.string()),
+        "alphabet_status": pa.array([], pa.string()),
+        "length": pa.array([], pa.int64()),
+        "length_bin": pa.array([], pa.string()),
+    }
+).schema
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--release-fasta", required=True, type=Path)
     ap.add_argument("--out-parquet", required=True, type=Path)
     ap.add_argument("--out-qc", required=True, type=Path)
+    ap.add_argument("--batch", type=int, default=500_000)
     args = ap.parse_args()
-
-    primary_records: list[CanonicalResult] = []
-    qc_records: list[CanonicalResult] = []
-    total = 0
-    for header, seq in iter_fasta(args.release_fasta):
-        accession, rna_type = parse_header(header)
-        res = canonicalize_one(accession, seq, rna_type)
-        total += 1
-        if res.alphabet_status == "primary":
-            primary_records.append(res)
-        else:
-            qc_records.append(res)
-        if total % 1_000_000 == 0:
-            print(f"  processed {total:,} sequences", flush=True)
 
     args.out_parquet.parent.mkdir(parents=True, exist_ok=True)
     args.out_qc.parent.mkdir(parents=True, exist_ok=True)
 
-    pq.write_table(build_arrow_table(primary_records), args.out_parquet)
-    pq.write_table(build_arrow_table(qc_records), args.out_qc)
+    total = 0
+    primary_count = 0
+    qc_count = 0
+    primary_buf: list[CanonicalResult] = []
+    qc_buf: list[CanonicalResult] = []
 
-    print(f"TOTAL={total:,} PRIMARY={len(primary_records):,} QC={len(qc_records):,}")
+    with pq.ParquetWriter(args.out_parquet, _SCHEMA, compression="snappy") as pw, \
+         pq.ParquetWriter(args.out_qc, _SCHEMA, compression="snappy") as qw:
+        def flush():
+            nonlocal primary_buf, qc_buf
+            if primary_buf:
+                pw.write_table(records_to_table(primary_buf))
+                primary_buf = []
+            if qc_buf:
+                qw.write_table(records_to_table(qc_buf))
+                qc_buf = []
+
+        for header, seq in iter_fasta(args.release_fasta):
+            accession, rna_type = parse_header(header)
+            res = canonicalize_one(accession, seq, rna_type)
+            total += 1
+            if res.alphabet_status == "primary":
+                primary_buf.append(res)
+                primary_count += 1
+            else:
+                qc_buf.append(res)
+                qc_count += 1
+            if total % args.batch == 0:
+                flush()
+                print(f"  processed {total:,} (primary={primary_count:,} qc={qc_count:,})", flush=True)
+        flush()
+
+    print(f"TOTAL={total:,} PRIMARY={primary_count:,} QC={qc_count:,}")
     print(f"wrote {args.out_parquet}")
     print(f"wrote {args.out_qc}")
 
