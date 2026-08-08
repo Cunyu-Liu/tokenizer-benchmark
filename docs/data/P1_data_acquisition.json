@@ -25,9 +25,48 @@
   ],
   "integrity_verification": {
     "method": "per-sequence md5 cross-check against RNAcentral md5.tsv (1000-sample reservoir)",
-    "status": "RUNNING",
-    "log": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/integrity_check.log"
+    "status": "PASS",
+    "log": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/integrity_check.log",
+    "result": {
+      "scanned_sequences": 30191670,
+      "sampled": 1000,
+      "matched": 1000,
+      "mismatched": 0,
+      "no_md5_lookup": 0
+    },
+    "completed_at": "2026-08-09T01:12:00+08:00"
   },
-  "temporal_ood_releases": ["23.0", "24.0", "25.0", "26.0"],
-  "note": "Release 27.0 (20/07/2026) is now the newest release. Contract freezes temporal OOD as releases 23-26; release 27 flagged for owner discussion (Goal amendment required to extend scope)."
+  "temporal_ood_releases": [
+    "23.0",
+    "24.0",
+    "25.0",
+    "26.0"
+  ],
+  "note": "Release 27.0 (20/07/2026) is now the newest release. Contract freezes temporal OOD as releases 23-26; release 27 flagged for owner discussion (Goal amendment required to extend scope).",
+  "temporal_ood_downloads": {
+    "release_23.0": {
+      "size_bytes": 7690052533,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_23.0/rnacentral_active.fasta.gz",
+      "verified_at": "2026-08-09T01:48:00+08:00"
+    },
+    "release_24.0": {
+      "size_bytes": 7663836843,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_24.0/rnacentral_active.fasta.gz",
+      "verified_at": "2026-08-09T01:48:00+08:00"
+    },
+    "release_25.0": {
+      "size_bytes": 9015996714,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_25.0/rnacentral_active.fasta.gz",
+      "verified_at": "2026-08-09T01:48:00+08:00"
+    },
+    "release_26.0": {
+      "size_bytes": 9015996714,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_26.0/rnacentral_active.fasta.gz",
+      "verified_at": "2026-08-09T01:48:00+08:00"
+    }
+  }
 }
