@@ -4,7 +4,7 @@
   "timestamp_utc": "2026-08-08T16:05:00Z",
   "acceptance_criteria": [
     {"criterion": "Goal local, remote, and mirror byte-identical", "result": "PASS", "evidence": "SHA-256 9a145302... identical across server + local mirror"},
-    {"criterion": "Git remote SHA re-readable", "result": "PASS", "evidence": "remote benchmark-v1 = 726466f09ec050b06642ee4cf0c6a797ebe1dd07"},
+    {"criterion": "Git remote SHA re-readable", "result": "PASS", "evidence": "remote benchmark-v1 = efc5536c84e46a46fd402106df85cf79b65c1fc7"},
     {"criterion": "Legacy results all HISTORICAL_ONLY or orphan status", "result": "PASS", "evidence": "docs/legacy/P0_D_legacy_lineage.json; excluded from main tables"},
     {"criterion": "No training performed", "result": "PASS", "evidence": "confirmed no GPU/CPU training launched"}
   ],

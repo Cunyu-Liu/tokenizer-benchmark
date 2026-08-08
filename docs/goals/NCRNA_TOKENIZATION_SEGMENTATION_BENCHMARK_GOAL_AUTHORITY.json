@@ -17,8 +17,8 @@
   "git": {
     "repo": "git@github.com:Cunyu-Liu/tokenizer-benchmark.git",
     "branch": "benchmark-v1",
-    "commit": "726466f09ec050b06642ee4cf0c6a797ebe1dd07",
-    "remote_sha_rechecked": "726466f09ec050b06642ee4cf0c6a797ebe1dd07"
+    "commit": "efc5536c84e46a46fd402106df85cf79b65c1fc7",
+    "remote_sha_rechecked": "efc5536c84e46a46fd402106df85cf79b65c1fc7"
   },
   "mnt_root": "/mnt/cunyuliu/tokenizer-benchmark",
   "revision_rule": "Amendment log entry or new Goal version required for any change to gates/science/thresholds (Goal §16)."
