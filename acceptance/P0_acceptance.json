@@ -1,0 +1,25 @@
+{
+  "phase": "Phase 0: Goal, authority, legacy lineage reconstruction",
+  "status": "PASS_CLOSED",
+  "timestamp_utc": "2026-08-08T16:05:00Z",
+  "acceptance_criteria": [
+    {"criterion": "Goal local, remote, and mirror byte-identical", "result": "PASS", "evidence": "SHA-256 9a145302... identical across server + local mirror"},
+    {"criterion": "Git remote SHA re-readable", "result": "PASS", "evidence": "remote benchmark-v1 = 726466f09ec050b06642ee4cf0c6a797ebe1dd07"},
+    {"criterion": "Legacy results all HISTORICAL_ONLY or orphan status", "result": "PASS", "evidence": "docs/legacy/P0_D_legacy_lineage.json; excluded from main tables"},
+    {"criterion": "No training performed", "result": "PASS", "evidence": "confirmed no GPU/CPU training launched"}
+  ],
+  "deliverables": [
+    "docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md",
+    "docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_AUTHORITY.json",
+    "GOAL.md (pointer + hash)",
+    "docs/preflight/P0_A_preflight.json",
+    "docs/legacy/P0_D_legacy_lineage.json",
+    "third_party/upstream_audit.json",
+    "third_party/third_party_manifest.json",
+    "licenses/README.md",
+    "schemas/*.schema.json (6 machine interfaces)",
+    "claims/claim_evidence_matrix.json",
+    "/mnt/cunyuliu/tokenizer-benchmark artifact root"
+  ],
+  "next_phase": "Phase 1: Data benchmark (RNAcentral release 22 + 23-26, canonicalization, dedup, homology clustering, Rfam annotation, cluster/family/clan/time split)"
+}

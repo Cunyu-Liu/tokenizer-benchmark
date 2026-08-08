@@ -1,0 +1,25 @@
+{
+  "authority": {
+    "document": "NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md",
+    "version": "V1",
+    "status": "ACTIVE",
+    "sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509"
+  },
+  "copies": {
+    "authoritative_server": "/home/cunyuliu/tokenizer-benchmark/docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md",
+    "local_mirror": "/Users/liucunyu/Documents/Codex/2026-08-08/volumes-orico-disc-blt-blt-code-2/outputs/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md"
+  },
+  "byte_identity_verified": {
+    "server_sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509",
+    "mirror_sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509",
+    "identical": true
+  },
+  "git": {
+    "repo": "git@github.com:Cunyu-Liu/tokenizer-benchmark.git",
+    "branch": "benchmark-v1",
+    "commit": "726466f09ec050b06642ee4cf0c6a797ebe1dd07",
+    "remote_sha_rechecked": "726466f09ec050b06642ee4cf0c6a797ebe1dd07"
+  },
+  "mnt_root": "/mnt/cunyuliu/tokenizer-benchmark",
+  "revision_rule": "Amendment log entry or new Goal version required for any change to gates/science/thresholds (Goal §16)."
+}
