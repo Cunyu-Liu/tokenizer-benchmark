@@ -1,0 +1,33 @@
+{
+  "phase": "Phase 1: data acquisition",
+  "data_anchor": "RNAcentral release 22.0",
+  "release_notes": "RNAcentral Release 22, 08/02/2023, 39,481,766 unique sequences, 114,881,945 cross-refs to 53 Expert Databases",
+  "files": [
+    {
+      "name": "rnacentral_active.fasta.gz",
+      "size_bytes": 7281938321,
+      "content_length_matches": true,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/rnacentral_active.fasta.gz"
+    },
+    {
+      "name": "rfam_annotations.tsv.gz",
+      "size_bytes": 331006468,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/rfam_annotations.tsv.gz"
+    },
+    {
+      "name": "md5.tsv.gz",
+      "size_bytes": 841592915,
+      "gzip_integrity": "PASS",
+      "location": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/md5.tsv.gz"
+    }
+  ],
+  "integrity_verification": {
+    "method": "per-sequence md5 cross-check against RNAcentral md5.tsv (1000-sample reservoir)",
+    "status": "RUNNING",
+    "log": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_22.0/integrity_check.log"
+  },
+  "temporal_ood_releases": ["23.0", "24.0", "25.0", "26.0"],
+  "note": "Release 27.0 (20/07/2026) is now the newest release. Contract freezes temporal OOD as releases 23-26; release 27 flagged for owner discussion (Goal amendment required to extend scope)."
+}
