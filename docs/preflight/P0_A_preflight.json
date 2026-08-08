@@ -1,0 +1,52 @@
+{
+  "task": "P0-A Fresh authority preflight",
+  "status": "PASS_CLOSED",
+  "timestamp_utc": "2026-08-08T15:55:00Z",
+  "connection": {
+    "host": "36.137.135.49",
+    "port": 22,
+    "user": "cunyuliu",
+    "server_hostname": "bms-18937653-012"
+  },
+  "gpu": {
+    "count": 8,
+    "model": "NVIDIA A100-PCIE-40GB",
+    "topology": [
+      {"gpu": 0, "uuid": "GPU-cfd06c8a-4322-b952-2e65-f71eaf622347", "used_mib": 8906},
+      {"gpu": 1, "uuid": "GPU-a590f174-04eb-13f7-58a4-1067bc8bd765", "used_mib": 11973},
+      {"gpu": 2, "uuid": "GPU-d46dc272-4b72-0b54-aacd-f9ace57d622f", "used_mib": 2407},
+      {"gpu": 3, "uuid": "GPU-3bafcaab-df4e-6fe2-154e-a8d47ef4ba98", "used_mib": 4},
+      {"gpu": 4, "uuid": "GPU-d7c96455-f897-7e6d-933a-d90dafd6bc3a", "used_mib": 8629},
+      {"gpu": 5, "uuid": "GPU-347d7935-3bea-a371-8e23-d97da06b3b47", "used_mib": 4147},
+      {"gpu": 6, "uuid": "GPU-1bbaf049-a78e-a985-19d4-02448974ccf8", "used_mib": 2092},
+      {"gpu": 7, "uuid": "GPU-d41cb4b0-575c-7993-2ec7-fe486aa8fb63", "used_mib": 12468}
+    ]
+  },
+  "disk": {
+    "home": {"fs": "/dev/mapper/vg_home-lv_home", "size": "7.0T", "avail": "5.3T"},
+    "mnt": {"fs": "10.179.129.209:/a9c191ec-1d7e-4034-96d0-40945ef460e3", "size": "18T", "avail": "12T"}
+  },
+  "github": {
+    "repo": "git@github.com:Cunyu-Liu/tokenizer-benchmark.git",
+    "refs": [],
+    "empty": true
+  },
+  "directories": {
+    "/home/cunyuliu/tokenizer-benchmark": "ABSENT",
+    "/mnt/cunyuliu/tokenizer-benchmark": "ABSENT"
+  },
+  "existing_jobs": {
+    "note": "Multiple unrelated training jobs (user shenxin) observed; none killed or modified.",
+    "kill_policy": "NONE"
+  },
+  "old_evidence": {
+    "local_overlays_outputs": "MISSING",
+    "status": "MISSING_OLD_DELIVERY",
+    "legacy_root": "/Volumes/orico-disc/blt (historical read-only evidence only)"
+  },
+  "acceptance": {
+    "no_process_killed": true,
+    "no_directory_modified": true,
+    "no_old_copy_selected_as_authority": true
+  }
+}

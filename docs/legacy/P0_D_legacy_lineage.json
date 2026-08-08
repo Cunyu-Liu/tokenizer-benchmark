@@ -1,0 +1,20 @@
+{
+  "task": "P0-D Legacy lineage regeneration",
+  "status": "PASS_CLOSED",
+  "policy": "REGENERATE_NEW_LINEAGE",
+  "timestamp_utc": "2026-08-08T15:58:00Z",
+  "parent_delivery_status": "MISSING",
+  "regenerated_with_new_run_ids": true,
+  "reused_old_checksums_as_current_evidence": false,
+  "legacy_components_rebuilt": [
+    "P0_D_legacy_report",
+    "P0_D_evidence_ledger",
+    "P0_D_run_registry",
+    "P0_D_legacy_dataset_manifest",
+    "P0_D_evaluation_protocol",
+    "P0_D_claim_matrix"
+  ],
+  "legacy_evidence_location": "/Volumes/orico-disc/blt (read-only historical evidence on local machine)",
+  "exclusion": "All legacy H100/H800/ngram/noNgram generation and slid-deck numbers are HISTORICAL_ONLY and excluded from new benchmark main tables, model selection, and prior-win judgments.",
+  "note": "The legacy data lineage is not closed and legacy outputs are missing; new line is regenerated from upstream references, not from legacy bytes."
+}

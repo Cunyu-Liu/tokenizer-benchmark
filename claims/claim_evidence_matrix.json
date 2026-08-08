@@ -1,0 +1,27 @@
+{
+  "purpose": "Initial claim-evidence matrix skeleton for Phase 0. Populated and maintained per Goal §14 across phases.",
+  "version": "0.1.0",
+  "entries": [
+    {
+      "claim_id": "p0_a_authority",
+      "claim": "Phase 0 authority, Goal, hashes, remote refs are byte-identical and closed.",
+      "evidence_class": "empirical_measured",
+      "status": "PASS_CLOSED",
+      "evidence_paths": ["docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md", "GOAL.md", "docs/preflight/P0_A_preflight.json"]
+    },
+    {
+      "claim_id": "legacy_excluded",
+      "claim": "Legacy BLT results are historical evidence only and excluded from main tables.",
+      "evidence_class": "historical_evidence",
+      "status": "PASS_CLOSED",
+      "evidence_paths": ["docs/legacy/P0_D_legacy_lineage.json"]
+    },
+    {
+      "claim_id": "novelty_narrow",
+      "claim": "G4_NARROW_BENCHMARK conditional; controlled comparison scope only.",
+      "evidence_class": "descriptive_statistic",
+      "status": "PASS_CLOSED",
+      "evidence_paths": ["docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md"]
+    }
+  ]
+}

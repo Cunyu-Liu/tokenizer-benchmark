@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schemas/dataset_manifest.schema.json",
+  "title": "TokBench-RNA dataset_manifest.json / sequence-level Parquet",
+  "description": "Per-sequence metadata. Fields apply to both the manifest JSON and the sequence-level Parquet columns.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "accession", "raw_sequence_hash", "canonical_sequence_hash",
+    "source_release", "rna_type", "taxonomy", "rfam_family", "rfam_clan",
+    "homology_cluster", "exclusion_reason", "split_membership"
+  ],
+  "properties": {
+    "accession": {"type": "string"},
+    "raw_sequence_hash": {"type": "string"},
+    "canonical_sequence_hash": {"type": "string"},
+    "source_release": {"type": "string"},
+    "rna_type": {"type": "string"},
+    "taxonomy": {"type": "string"},
+    "rfam_family": {"type": ["string", "null"]},
+    "rfam_clan": {"type": ["string", "null"]},
+    "homology_cluster": {"type": ["string", "null"]},
+    "exclusion_reason": {"type": ["string", "null"]},
+    "split_membership": {"type": "string", "enum": ["train","validation","primary_test","family_test","clan_test","temporal_ood","excluded","unassigned"]}
+  }
+}

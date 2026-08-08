@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schemas/score_sums.schema.json",
+  "title": "TokBench-RNA ScoreSums",
+  "description": "Aggregated score sums. Never store only a single average scalar; always keep sums and counts so metrics are independently recomputable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nll_nats_sum", "nll_bits_sum", "valid_nt_count", "eos_nll_sum",
+    "sequence_count", "invalid_count", "truncation_count"
+  ],
+  "properties": {
+    "nll_nats_sum": {"type": "number"},
+    "nll_bits_sum": {"type": "number"},
+    "valid_nt_count": {"type": "integer"},
+    "eos_nll_sum": {"type": "number"},
+    "sequence_count": {"type": "integer"},
+    "invalid_count": {"type": "integer"},
+    "truncation_count": {"type": "integer"}
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schemas/claim_evidence_matrix.schema.json",
+  "title": "TokBench-RNA claim-evidence matrix entry",
+  "description": "Every scientific claim must be bound to an evidence class. Claims may not be upgraded without the underlying evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "claim", "evidence_class", "status", "evidence_paths"],
+  "properties": {
+    "claim_id": {"type": "string"},
+    "claim": {"type": "string"},
+    "evidence_class": {"type": "string", "enum": ["empirical_measured","empirical_metric","computational_proxy","descriptive_statistic","historical_evidence","development_only"]},
+    "status": {"type": "string", "enum": ["NOT_RUN","DEVELOPMENT_ONLY","PASS_CLOSED","FAIL_CLOSED_WITH_EVIDENCE","BLOCKED_EXTERNAL_WITH_EVIDENCE","TERMINATED_SAFELY_WITH_EVIDENCE","REDIRECT_PENDING_OWNER_APPROVAL"]},
+    "evidence_paths": {"type": "array", "items": {"type": "string"}}
+  }
+}

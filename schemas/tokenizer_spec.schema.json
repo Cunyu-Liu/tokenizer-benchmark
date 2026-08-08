@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schemas/tokenizer_spec.schema.json",
+  "title": "TokBench-RNA tokenizer_spec.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tokenizer_type", "vocab_size", "k", "stride", "offset",
+    "training_data_hash", "tool_version", "model_file_hash",
+    "special_tokens", "round_trip_status", "prefix_rule"
+  ],
+  "properties": {
+    "tokenizer_type": {"type": "string", "enum": ["NUC","BPE","Unigram","overlap_mer","nonoverlap_mer","fixed_patch","random_patch","entropy_patch"]},
+    "vocab_size": {"type": "integer"},
+    "k": {"type": ["integer","null"]},
+    "stride": {"type": ["integer","null"]},
+    "offset": {"type": ["integer","null"]},
+    "training_data_hash": {"type": "string"},
+    "tool_version": {"type": "string"},
+    "model_file_hash": {"type": ["string","null"]},
+    "special_tokens": {"type": "object"},
+    "round_trip_status": {"type": "string", "enum": ["PASS","FAIL"]},
+    "prefix_rule": {"type": "string"}
+  }
+}

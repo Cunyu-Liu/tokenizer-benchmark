@@ -1,0 +1,32 @@
+{
+  "purpose": "Authoritative third-party manifest for upstream code, public weights, and external baselines. Populated incrementally as code is ported (Phases 3/5) and frozen at each delivery.",
+  "version": "0.1.0",
+  "code": [
+    {
+      "component": "BLT",
+      "upstream": "kyegomez/BYTESIZEDTRANSFORMER",
+      "commit": "TBD_LOCK_AT_PORT",
+      "license": "TBD_LOCK_AT_PORT",
+      "local_mods": []
+    },
+    {
+      "component": "flat_backbone",
+      "upstream": "public causal flat Transformer",
+      "commit": "TBD_LOCK_AT_PORT",
+      "license": "TBD_LOCK_AT_PORT",
+      "local_mods": []
+    }
+  ],
+  "weights": [
+    {"name": "GenerRNA model_updated.pt", "sha256": "TBD_LOCK_AT_PHASE5", "license": "TBD"},
+    {"name": "GenerRNA model.pt (historical)", "sha256": "TBD_LOCK_AT_PHASE5", "license": "TBD"},
+    {"name": "GARNET public GPT", "sha256": "TBD_LOCK_AT_PHASE5", "license": "TBD"},
+    {"name": "EVA 145M", "sha256": "TBD_LOCK_AT_PHASE5", "license": "TBD"},
+    {"name": "EVA 437M", "sha256": "TBD_LOCK_AT_PHASE5", "license": "TBD"}
+  ],
+  "bio_tools": {
+    "mmseqs2": {"license": "TBD_LOCK_AT_PHASE1"},
+    "infernal": {"license": "TBD_LOCK_AT_PHASE1"},
+    "viennarna": {"license": "TBD_LOCK_AT_PHASE1"}
+  }
+}

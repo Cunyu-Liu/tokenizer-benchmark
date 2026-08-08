@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schemas/benchmark_contract.schema.json",
+  "title": "TokBench-RNA benchmark_contract.yaml",
+  "description": "Authoritative machine interface. Critical scientific fields must not be overridden by CLI at runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "goal_hash", "code_commit", "dataset_manifest_hash", "split_hash",
+    "tokenizer_hash", "model_arms", "param_budget", "context_nt",
+    "training_seeds", "nucleotide_budget", "hardware_cohort",
+    "scoring_protocol", "generation_protocol", "output_root"
+  ],
+  "properties": {
+    "goal_hash": {"type": "string"},
+    "code_commit": {"type": "string"},
+    "dataset_manifest_hash": {"type": "string"},
+    "split_hash": {"type": "string"},
+    "tokenizer_hash": {"type": "string"},
+    "model_arms": {"type": "array", "items": {"type": "string"}},
+    "param_budget": {"type": "object"},
+    "context_nt": {"type": "integer"},
+    "training_seeds": {"type": "array", "items": {"type": "integer"}},
+    "nucleotide_budget": {"type": "object"},
+    "hardware_cohort": {"type": "string"},
+    "scoring_protocol": {"type": "string"},
+    "generation_protocol": {"type": "string"},
+    "output_root": {"type": "string"}
+  }
+}

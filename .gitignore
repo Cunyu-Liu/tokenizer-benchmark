@@ -1,0 +1,56 @@
+# ---- TokBench-RNA .gitignore (Phase 0, benchmark-v1) ----
+
+# Environment / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / weights / checkpoints (kept in /mnt/cunyuliu/tokenizer-benchmark, NEVER in git)
+data/raw/
+data/derived/
+tokenizers/lib/
+weights/reference/
+checkpoints/
+runs/
+.cache/
+tmp/
+
+# Python envs
+.venv/
+venv/
+env/
+
+# Large artifacts
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+*.safetensors
+*.tar.gz
+*.h5
+*.parquet
+*.bam
+*.bai
+
+# Secrets
+.env
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Editor / IDEs
+.vscode/
+.idea/
+*.swp
+*~
