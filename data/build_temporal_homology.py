@@ -92,6 +92,8 @@ def main() -> None:
     ap.add_argument("--split-parquet", required=True, type=Path)
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--tmp-dir", type=Path, default=Path("/mnt/cunyuliu/tokenizer-benchmark/tmp"))
+    ap.add_argument("--existing-cluster-tsv", type=Path, default=None,
+                    help="skip mmseqs clustering and reuse this cluster TSV")
     ap.add_argument("--threads", type=int, default=24)
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -114,7 +116,11 @@ def main() -> None:
     write_fasta(train_seq + temp_seq, [str(i) for i in train_ids + temp_ids], fasta)
 
     out_prefix = args.tmp_dir / "combo_temporal_cluster"
-    tsv = run_mmseqs_cluster(fasta, out_prefix, args.threads, args.tmp_dir)
+    if args.existing_cluster_tsv is not None:
+        tsv = args.existing_cluster_tsv
+        print(f"reusing existing cluster TSV: {tsv}", flush=True)
+    else:
+        tsv = run_mmseqs_cluster(fasta, out_prefix, args.threads, args.tmp_dir)
     member_to_rep = parse_cluster_tsv(tsv)
 
     keep = kept_temporal_indices(n_train, n_temp, member_to_rep)
@@ -137,8 +143,7 @@ def main() -> None:
         ("length_bin", pa.string()),
     ])
     if out_rows:
-        tbl = pa.table(out_rows)
-        tbl = tbl.select([f.name for f in schema]).cast(schema)
+        tbl = pa.Table.from_pylist(out_rows, schema=schema)
     else:
         tbl = pa.table({
             "accession": pa.array([], pa.string()), "release": pa.array([], pa.string()),
