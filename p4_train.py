@@ -153,12 +153,25 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
                          "val_nt": v["val_nt"], "val_batches": v["val_batches"]}
             manifest["validations"].append(val_entry)
             ck_path = os.path.join(out_dir, "ckpt_nt%09d_step%06d.pt" % (cumulative_nt, step))
-            torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
-                        "nt": cumulative_nt, "step": step,
-                        "val_loss": v["val_loss"], "cfg_run_id": cfg.run_id,
-                        "arm": arm_id, "seed": seed}, ck_path)
+            payload = {"model": model.state_dict(), "opt": opt.state_dict(),
+                       "nt": cumulative_nt, "step": step,
+                       "val_loss": v["val_loss"], "cfg_run_id": cfg.run_id,
+                       "arm": arm_id, "seed": seed}
+            if calib is not None:
+                # Persist the train-only entropy calibration with the checkpoint so
+                # P1/P2/P3 inference reproduces the exact patch boundaries (the
+                # fitted predictor + calibrated gate + empirical length stats).
+                payload["calib"] = {
+                    "predictor_state": calib.predictor.state_dict(),
+                    "gate": calib.gate,
+                    "mean_patch_len": calib.mean_patch_len,
+                    "length_dist": calib.length_dist,
+                    "checkpoint_hash": calib.checkpoint_hash,
+                }
+            torch.save(payload, ck_path)
             manifest["checkpoints"].append({"nt": cumulative_nt, "step": step,
-                                            "val_loss": v["val_loss"], "path": ck_path})
+                                            "val_loss": v["val_loss"], "path": ck_path,
+                                            "calib_persisted": calib is not None})
             if v["val_loss"] < best_val:
                 best_val = v["val_loss"]
                 best_ck = ck_path
@@ -183,6 +196,7 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
         "peak_vram_mb": torch.cuda.max_memory_allocated(device) / (1024 ** 2),
         "wall_seconds": time.time() - t0,
         "cpu_fallback_count": guard.cpu_fallback_count,
+        "calib_persisted": calib is not None,
         "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "status": "DONE",
     })
