@@ -191,11 +191,21 @@ def base_lr_for_scale(scale: str) -> float:
     return BASE_LR_350M if scale == "350M" else BASE_LR_100M
 
 
+# Empirically fastest effective-nt-per-step on this A100-40GB cohort for the
+# 100M matrix (measured 2026-08-09: 8192->4264, 16384->4652, 32768->3936,
+# 65536->2498 nt/s). Contract 3.4 mandates budget/context/optimizer/LR and a
+# consistent effective batch across arms (not a fixed numeric batch_nt), so we
+# use the throughput-optimal 16384 for 100M science runs. 350M keeps 65536.
+BATCH_NT_100M = 16384
+
+
 def resolved_config(arm_id: str, seed: int, scale: str = "100M",
-                    batch_nt: int = 32768) -> RunConfig:
+                    batch_nt: int | None = None) -> RunConfig:
     """Resolve a fully-specified training config for one arm/seed/scale."""
     if scale not in ("100M", "350M"):
         raise ValueError("scale must be '100M' or '350M'")
+    if batch_nt is None:
+        batch_nt = BATCH_NT_100M if scale == "100M" else 65536
     arm = arm_(arm_id)
     target = target_for_scale(scale)
     arch = solve_arch(target)

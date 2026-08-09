@@ -86,6 +86,16 @@ def test_frozen_lr_untuned_arms_default_base():
             "%s unexpectedly tuned lr=%r" % (a.id, cfg.optim.lr)
 
 
+def test_batch_nt_100M_fastest_default():
+    # 100M science runs default to the empirically fastest batch_nt (16384)
+    # measured on this cohort; 350M keeps 65536. Batch_nt is an efficiency
+    # constant (contract mandates budget/context/optimizer/LR + a consistent
+    # effective batch, not a fixed number), so both scale defaults are valid.
+    assert tc.BATCH_NT_100M == 16384
+    assert tc.resolved_config("F1", 17).batch_nt == 16384
+    assert tc.resolved_config("C1", 17, scale="350M").batch_nt == 65536
+
+
 def test_build_model_output_vocab():
     cfg = tc.resolved_config("F2", 17)  # BPE vocab 1024
     m = tc.build_model(cfg)
