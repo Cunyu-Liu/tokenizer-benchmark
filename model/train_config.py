@@ -196,9 +196,10 @@ def resolved_config(arm_id: str, seed: int, scale: str = "100M",
     entropy_params = 0
     if arm.tokenizer_type == "entropy_patch":
         # P3/C4: entropy boundary predictor trained on train split only.
-        from .backbone import EntropyPatcher
-        patcher = EntropyPatcher()
-        entropy_params = count_params(patcher).total_params
+        # The recorded independent param count must match the predictor that
+        # the training loop actually uses (contract 3.2).
+        from .entropy_predictor import EntropyPredictor
+        entropy_params = count_params(EntropyPredictor()).total_params
     return RunConfig(
         run_id=_run_id(arm_id, seed, scale, batch_nt),
         scale=scale,

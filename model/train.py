@@ -1,0 +1,182 @@
+"""GPU-only training loop consuming RunConfig (contract 3.4).
+
+- Encodes/streams train batches from the frozen split parquet.
+- Applies the per-arm tokenizer / patch boundary provider.
+- Optimizer: AdamW (0.9,0.95), weight_decay 0.1, bf16 autocast.
+- Stop / warmup / checkpoint counted in cumulative valid target nt.
+- LR: linear warmup -> cosine decay over budget_nt (no repeated tuning).
+- GPU-only: device must be cuda; cpu_fallback_count stays 0.
+"""
+from __future__ import annotations
+
+import math
+import os
+import time
+
+import torch
+import torch.nn as nn
+
+from .arms import ArmSpec
+from .backbone import FlatCausalLM, BLTCausalLM
+from .census import GPUGuard, count_params
+from .dataset import (
+    IGNORE, Exposure, build_tokenizer, count_valid_nt, iter_train_batches,
+)
+from .entropy_predictor import (
+    EntropyCalib, EntropyPatchPolicy, EntropyPredictor, calibrate_entropy,
+)
+from .patch import PatchPolicy
+
+
+def build_model_for_cfg(cfg, device: str):
+    guard = GPUGuard(device)
+    guard.check()  # raises on cpu
+    if cfg.arm.backbone == "flat":
+        m = FlatCausalLM(
+            vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
+            n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
+            max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
+            tied_embed=cfg.embed.tied)
+    else:
+        m = BLTCausalLM(
+            vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
+            n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
+            max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
+            tied_embed=cfg.embed.tied, patcher=None,
+            default_patch_len=cfg.arch.d_model and 8)
+    return m.to(device)
+
+
+def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
+                          device: str = "cuda:0") -> PatchPolicy | EntropyPatchPolicy | None:
+    """Return the boundary policy for a BLT arm.
+
+    P1/P2 derive fixed length / random length distribution from the train-only
+    entropy calibration (contract 3.2). P3 uses the fitted entropy predictor +
+    calibrated gate. Falls back to a fixed default when no calibration given
+    (used only by smoke tests, not scientific runs).
+    """
+    if cfg.arm.backbone != "blt":
+        return None
+    t = cfg.arm.tokenizer_type
+    if t == "fixed_patch":
+        plen = int(round(calib.mean_patch_len)) if calib else 8
+        return PatchPolicy(kind="fixed", patch_len=max(1, plen))
+    if t == "random_patch":
+        dist = list(calib.length_dist) if calib else [0.125] * 8
+        return PatchPolicy(kind="random", seed=cfg.seed, length_dist=dist)
+    if t == "entropy_patch":
+        if calib is None:
+            # smoke-only fallback: a fresh untrained predictor + default gate
+            pred = EntropyPredictor().to(device)
+            return EntropyPatchPolicy(pred, gate=8.0, device=device)
+        return EntropyPatchPolicy(calib.predictor, calib.gate, device=device)
+    raise ValueError(t)
+
+
+def _tensor(batch, device, key):
+    return torch.tensor(batch[key], dtype=torch.long, device=device)
+
+
+def train(cfg, data_path, device="cuda:0", batch_size=32,
+          max_batches=None, log_every=50, checkpoint_interval_nt=2_000_000,
+          checkpoint_dir=None, start_seed=0, calib: EntropyCalib | None = None):
+    """Run one full training budget. Checkpoints by valid target nt."""
+    guard = GPUGuard(device)
+    guard.check()
+    model = build_model_for_cfg(cfg, device)
+    policy = _patch_policy_for_arm(cfg, calib=calib, device=device)
+    param_count = count_params(model)
+    entropy_policy = policy if isinstance(policy, EntropyPatchPolicy) else None
+
+    opt = torch.optim.AdamW(
+        model.parameters(), lr=cfg.optim.lr,
+        betas=cfg.optim.betas, weight_decay=cfg.optim.weight_decay)
+
+    budget = cfg.budget_nt
+    warmup = cfg.warmup_nt
+    expo = Exposure()
+    step = 0
+    last_ck = 0
+    t0 = time.time()
+    performed_nt = 0
+
+    def lr_at(nt):
+        if nt < warmup:
+            return cfg.optim.lr * (nt / max(1, warmup))
+        progress = min(1.0, (nt - warmup) / max(1, budget - warmup))
+        return cfg.optim.lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    # For P3 entropy, boundaries are computed on GPU from the nt batch; the
+    # dataset does not emit a per-sequence boundary.
+    dataset_policy = None if entropy_policy is not None else policy
+    gen = iter_train_batches(
+        data_path, cfg, boundary_provider=dataset_policy,
+        batch_size=batch_size, max_batches=max_batches, seed=start_seed)
+
+    for batch in gen:
+        if expo.cumulative_valid_target_nt >= budget:
+            break
+        valid_nt = count_valid_nt(batch)
+        tok = _tensor(batch, device, "token_ids")
+        tgt = _tensor(batch, device, "targets")
+        for g in opt.param_groups:
+            g["lr"] = lr_at(expo.cumulative_valid_target_nt)
+        model.train()
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            if cfg.arm.backbone == "blt":
+                if entropy_policy is not None:
+                    bnd = entropy_policy.boundaries_batch(tok)
+                else:
+                    bnd = _tensor(batch, device, "boundary").float()
+                logits, loss = model(tok, bnd, targets=tgt)
+            else:
+                logits, loss = model(tok, targets=tgt)
+        if loss is None:
+            continue
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.optim.max_grad_norm)
+        opt.step()
+
+        expo.add_batch(valid_nt, len(batch["token_ids"]))
+        performed_nt += valid_nt
+        step += 1
+
+        if checkpoint_interval_nt and expo.cumulative_valid_target_nt - last_ck >= checkpoint_interval_nt:
+            last_ck = expo.cumulative_valid_target_nt
+            if checkpoint_dir:
+                ck = os.path.join(checkpoint_dir, "step_%06d.pt" % step)
+                torch.save({
+                    "model": model.state_dict(),
+                    "opt": opt.state_dict(),
+                    "nt": expo.cumulative_valid_target_nt,
+                    "loss": loss.item(),
+                    "cfg_run_id": cfg.run_id,
+                }, ck)
+
+        if log_every and step % log_every == 0:
+            print("[%s] step=%d nt=%d loss=%.4f lr=%.2e %.1f nt/s" % (
+                cfg.run_id, step, expo.cumulative_valid_target_nt,
+                loss.item(), opt.param_groups[0]["lr"],
+                performed_nt / max(1e-9, time.time() - t0)))
+
+    return {
+        "run_id": cfg.run_id,
+        "steps": step,
+        "cumulative_valid_target_nt": expo.cumulative_valid_target_nt,
+        "final_loss": loss.item() if loss is not None else None,
+        "params": param_count.total_params,
+        "device": device,
+        "cpu_fallback_count": guard.cpu_fallback_count,
+        "wall_seconds": time.time() - t0,
+    }
+
+
+def smoke_run(cfg, data_path, device="cuda:0", budget_nt=100_000, batch_size=16):
+    """Small GPU smoke: verify forward/backward/opt over a tiny budget."""
+    import copy
+    small = copy.copy(cfg)
+    object.__setattr__(small, "budget_nt", budget_nt)
+    return train(small, data_path, device=device, batch_size=batch_size,
+                 checkpoint_interval_nt=0, log_every=None, max_batches=None)
