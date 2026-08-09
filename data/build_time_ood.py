@@ -107,7 +107,7 @@ def main() -> None:
                 print(f"  release {rel}: kept {new_count:,} (exact_removed={exact_removed:,})",
                       flush=True)
         if kept:
-            tbl = pa.table({k: [r[k] for k in kept] for k in kept[0].keys()})
+            tbl = pa.table({k: [row[k] for row in kept] for k in kept[0].keys()})
             tbl = tbl.select(_SCHEMA.names).cast(_SCHEMA)
             pq.write_table(tbl, out)
         print(f"release {rel}: total_new={new_count:,} exact_overlap_removed={exact_removed:,} -> {out}",
