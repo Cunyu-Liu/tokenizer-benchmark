@@ -146,36 +146,83 @@ class BPETokenizer(TokenizerBase):
         self.model_file_hash = None
 
     def fit(self, sequences: Iterable[str], max_merges: Optional[int] = None) -> None:
-        """Learn BPE merges from train sequences only."""
-        corpus = [list(_canon(s)) for s in sequences]
+        """Learn BPE merges from train sequences only.
+
+        Rebuild-based BPE: each merge merges every occurrence of the most frequent
+        adjacent pair, rebuilding only the sequences that contain it instead of
+        rescaming the whole corpus. This is the standard left-to-right greedy BPE
+        (identical merge semantics to the naive scan) but is feasible on large
+        corpora where O(merges x corpus) is intractable. Deterministic: ties broken
+        by the pair tuple. Round-trip is preserved.
+        """
+        seqs = [list(_canon(s)) for s in sequences]
         merges = []
         special_extra = len(self.special_tokens)
         budget = self.target_vocab - len(self.base_vocab) - special_extra
         if max_merges is not None:
             budget = min(budget, max_merges)
-        for _ in range(max(0, budget)):
-            pair_counts = Counter()
-            for toks in corpus:
-                for a, b in zip(toks, toks[1:]):
-                    pair_counts[(a, b)] += 1
-            if not pair_counts:
-                break
-            top_pair, _ = pair_counts.most_common(1)[0]
-            merges.append(top_pair)
-            merged = top_pair[0] + top_pair[1]
-            new_corpus = []
-            for toks in corpus:
-                nt = []
-                i = 0
-                while i < len(toks):
-                    if i + 1 < len(toks) and (toks[i], toks[i + 1]) == top_pair:
-                        nt.append(merged)
+
+        # pair -> set of (seq_idx, left_pos); count[pair] == len(pair_pos[pair]).
+        pair_pos: dict[tuple[str, str], set[tuple[int, int]]] = {}
+        count: dict[tuple[str, str], int] = {}
+
+        def _has(si: int, pos: int) -> bool:
+            return 0 <= pos and pos + 1 < len(seqs[si])
+
+        def add(si: int, pos: int) -> None:
+            if not _has(si, pos):
+                return
+            key = (seqs[si][pos], seqs[si][pos + 1])
+            s = pair_pos.setdefault(key, set())
+            if (si, pos) not in s:
+                s.add((si, pos))
+                count[key] = count.get(key, 0) + 1
+
+        def remove(si: int, pos: int) -> None:
+            if not _has(si, pos):
+                return
+            key = (seqs[si][pos], seqs[si][pos + 1])
+            s = pair_pos.setdefault(key, set())
+            if (si, pos) in s:
+                s.discard((si, pos))
+                count[key] = count.get(key, 0) - 1
+                if count[key] <= 0:
+                    del count[key]
+                    del pair_pos[key]
+
+        def clear_seq(si: int) -> None:
+            for pos in range(len(seqs[si]) - 1):
+                remove(si, pos)
+
+        def add_seq(si: int) -> None:
+            for pos in range(len(seqs[si]) - 1):
+                add(si, pos)
+
+        for si in range(len(seqs)):
+            add_seq(si)
+
+        while len(merges) < max(0, budget) and count:
+            top = max(count, key=lambda k: (count[k], k))
+            a, b = top
+            merged = a + b
+            # Snapshot affected sequences before clearing modifies pair_pos.
+            affected = sorted({si for si, _ in pair_pos[top]})
+            for si in affected:
+                clear_seq(si)
+                old = seqs[si]
+                new = []
+                i, n = 0, len(old)
+                while i < n:
+                    if i + 1 < n and old[i] == a and old[i + 1] == b:
+                        new.append(merged)
                         i += 2
                     else:
-                        nt.append(toks[i])
+                        new.append(old[i])
                         i += 1
-                new_corpus.append(nt)
-            corpus = new_corpus
+                seqs[si] = new
+                add_seq(si)
+            merges.append((a, b))
+
         self.merges = merges
         # build vocab
         self._id_to_token = list(self.base_vocab)
