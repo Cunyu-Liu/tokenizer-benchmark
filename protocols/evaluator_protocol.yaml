@@ -1,0 +1,52 @@
+protocol: TokBench-RNA Phase 2 Unified Evaluator Protocol
+version: 0.2.0
+authority_note: Frozen with Goal; semantic fields must not be overridden by CLI.
+
+scoring:
+  next_base_BPN:
+    definition: -\u2211 log2 p(x_i | x_<i) / N_canonical_nt
+    each_nt_scored_once: true
+    excludes_from_numerator_denominator: [BOS, padding, packing_separator]
+    eos_reported: EOS_NLL
+    dataset_aggregation: total_nll / total_nt   # not unweighted sequence mean
+  canonical_path_BPN:
+    definition: cumulative token NLL over canonical token path / raw canonical nt
+    note: compression-path view; not marginal over all tokenizations
+  overlap_path_BPN:
+    definition: full-vocabulary overlap path score, each step adds one nt
+    illegal_transfer_mass: reported separately
+
+tokenizers:
+  static_track: [NUC, BPE-1024, Unigram-1024, overlap3, overlap6, nonoverlap3, nonoverlap6]
+  vocab_built_from: train_split_only
+  round_trip: must_pass
+  prefix_rule: no BPE token crosses observed/hidden suffix boundary
+
+continuation:
+  prefixes: [0.10, 0.25, 0.50]
+  prefix_defined_in: raw_nt
+  target_length: model_agnostic
+  truncation: keep_full_output + fixed-length eval view + record
+
+generation:
+  validation_grid: temperature [0.7,0.9,1.1] x top_p [0.90,0.95,1.00] + greedy, top_k=0
+  preregistered_points:
+    conservative: [0.8, 0.95]
+    balanced: [1.0, 0.95]
+    exploratory: [1.1, 1.0]
+  min_valid_per_seed_condition: 10000
+  five_generation_seeds_of: 2000
+
+sealed_test_gate:
+  primary_test: sealed
+  family_test: sealed
+  temporal_ood: sealed
+  no_read_before_train_complete: true
+
+external_models:
+  required_reference: [GenerRNA_updated, GenerRNA_history, GARNET]
+  comparability_states: [STRICTLY_COMPARABLE, REFERENCE_ONLY, UNAVAILABLE_WITH_EVIDENCE]
+
+gpu:
+  neural_forward_requires: cuda_with_fallback_count_zero
+  cpu_allowed: [hash, cleanup, mmseqs2, infernal, viennarna, bootstrap, deterministic_fixtures]

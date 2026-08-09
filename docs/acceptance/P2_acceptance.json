@@ -1,0 +1,82 @@
+{
+  "phase": "Phase 2: Unified evaluator and protocol",
+  "status": "PASS_CLOSED",
+  "timestamp_utc": "2026-08-09T07:30:00Z",
+  "deliverables": [
+    "evaluator/scorer.py",
+    "evaluator/tokenizer.py",
+    "evaluator/eval_continuation.py",
+    "evaluator/adapter.py",
+    "evaluator/__init__.py",
+    "protocols/evaluator_protocol.yaml",
+    "tests/test_evaluator.py"
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "canonical A/C/G/U round-trip byte-identical (NUC/BPE/Unigram/overlap/nonoverlap)",
+      "result": "PASS",
+      "evidence": "test_*_roundtrip"
+    },
+    {
+      "criterion": "BPE/Unigram vocab built from train split only",
+      "result": "PASS",
+      "evidence": "test_bpe_vocab_train_only"
+    },
+    {
+      "criterion": "overlapping k-mer each step adds exactly one nt (lossless overlap representation)",
+      "result": "PASS",
+      "evidence": "test_overlap_path_each_step_one_nt + overlap decode semantics"
+    },
+    {
+      "criterion": "padding/BOS/EOS do not change next_base_BPN",
+      "result": "PASS",
+      "evidence": "test_padding_bos_ignore"
+    },
+    {
+      "criterion": "shared scorer matches manual oracle within 1e-7",
+      "result": "PASS",
+      "evidence": "test_sums_match_manual_oracle"
+    },
+    {
+      "criterion": "dataset aggregation uses total NLL/total nt, not unweighted seq mean",
+      "result": "PASS",
+      "evidence": "test_dataset_agg_total_not_mean"
+    },
+    {
+      "criterion": "next_base_BPN + canonical_path_BPN + overlap_path_BPN semantics distinct",
+      "result": "PASS",
+      "evidence": "scorer.py; test_canonical_path/test_overlap_path"
+    },
+    {
+      "criterion": "ScoreSums keeps sums+counts not a single scalar",
+      "result": "PASS",
+      "evidence": "ScoreSums.to_dict; score_sums.schema.json"
+    },
+    {
+      "criterion": "continuation/generation metrics (edit dist, nt acc, k-mer recovery, validity, uniqueness, novelty, memorization)",
+      "result": "PASS",
+      "evidence": "test_continuation_result/test_generation_validity_uniqueness/test_exact_copy_novelty_zero"
+    },
+    {
+      "criterion": "sealed-test gate guards exposure",
+      "result": "PASS",
+      "evidence": "test_sealed_gate_blocks_touch"
+    },
+    {
+      "criterion": "external model adapter schema (3.7) with comparability states",
+      "result": "PASS",
+      "evidence": "adapter.py ExternalModelInfo"
+    },
+    {
+      "criterion": "evaluator protocol YAML frozen",
+      "result": "PASS",
+      "evidence": "protocols/evaluator_protocol.yaml"
+    }
+  ],
+  "test_summary": {
+    "total": 45,
+    "passed": 45,
+    "failed": 0
+  },
+  "next_phase": "Phase 3: Model implementation and GPU calibration (clean flat + clean BLT, ten arms, smoke/calibration, parameter/FLOP/exposure census, LR pilot)"
+}
