@@ -33,13 +33,14 @@ def run_mmseqs_cluster(
     coverage: float,
     cov_mode: int = 1,
     threads: int = 32,
+    tmp_dir: Path = Path("/mnt/cunyuliu/tokenizer-benchmark/tmp"),
 ) -> Path:
     """Run mmseqs easy-cluster; returns path to cluster TSV (representative<TAB>member)."""
     cmd = [
         "mmseqs", "easy-cluster",
         str(fasta),
         str(out_prefix),
-        str(tempfile.mkdtemp(prefix="mmseqs_easy_")),
+        str(tmp_dir / "mmseqs_easy_tmp"),
         "--min-seq-id", str(min_seq_id),
         "-c", str(coverage),
         "--cov-mode", str(cov_mode),
@@ -80,15 +81,18 @@ def main() -> None:
     ap.add_argument("--min-seq-id", type=float, default=0.8)
     ap.add_argument("--coverage", type=float, default=0.8)
     ap.add_argument("--cov-mode", type=int, default=1)
+    ap.add_argument("--threads", type=int, default=32)
+    ap.add_argument("--tmp-dir", type=Path, default=Path("/mnt/cunyuliu/tokenizer-benchmark/tmp"))
     ap.add_argument("--keep-cluster-files", action="store_true")
     args = ap.parse_args()
 
     table = pq.read_table(args.dedup_parquet)
-    tmpdir = tempfile.mkdtemp(prefix="tokbench_cluster_")
-    fasta = Path(tmpdir) / "seqs.fa"
+    args.tmp_dir.mkdir(parents=True, exist_ok=True)
+    fasta = args.tmp_dir / "seqs.fa"
     write_fasta(table, fasta)
     tsv = run_mmseqs_cluster(
-        fasta, Path(tmpdir) / "cluster", args.min_seq_id, args.coverage, args.cov_mode
+        fasta, args.tmp_dir / "cluster", args.min_seq_id, args.coverage,
+        args.cov_mode, args.threads, args.tmp_dir
     )
     cluster_tab = parse_cluster_tsv(tsv, table.num_rows)
     # attach cluster_id to dedup table
