@@ -1,0 +1,68 @@
+{
+  "name": "TokBench-RNA release-22 primary + temporal OOD benchmark dataset",
+  "short_name": "TokBench-RNA v1",
+  "version": "1.0",
+  "data_anchor": {
+    "database": "RNAcentral",
+    "release": "22.0",
+    "release_date": "2023-08-02",
+    "total_sequences_release": 39481766,
+    "license": "CC0 / RNAcentral terms"
+  },
+  "temporal_ood_releases": ["23.0", "25.0"],
+  "temporal_ood_note": "release 24.0 is a strict subset of 22.0 (excluded); releases 25.0 and 26.0 are byte-identical active.fasta snapshots and dedup to a single candidate pool.",
+  "canonicalization": {
+    "input_sequences": 30191670,
+    "primary_alphabet_sequences": 29252916,
+    "qc_sequences": 938754,
+    "rules": ["uppercase", "T->U", "primary alphabet A/C/G/U only"],
+    "ambiguity_handling": "non-primary alphabet records kept in QC ledger (release22_qc.parquet), excluded from primary training; reserved as ambiguity stress subset"
+  },
+  "exact_dedup": {
+    "input": 29252916,
+    "unique_canonical": 29012227,
+    "duplicates_removed": 240689,
+    "accession_mapping": "preserved per canonical sequence"
+  },
+  "homology_clustering": {
+    "primary": {"identity": 0.8, "coverage": 0.8, "cov_mode": 1, "tool": "MMseqs2 easy-cluster 18.8cc5c"},
+    "sensitivity": {"identity": 0.9, "coverage": 0.9, "cov_mode": 1, "tool": "MMseqs2 easy-cluster 18.8cc5c"},
+    "cluster_col": "cluster_id = representative sequence id",
+    "n_clusters_8080": 3357201
+  },
+  "split": {
+    "method": "family/clan held-out + stable-hash cluster split (seed 20260808)",
+    "seed": "20260808",
+    "counts_8080": {
+      "train": 14130321,
+      "validation": 164280,
+      "test": 108979,
+      "family_test": 7082895,
+      "family_validation": 7525752
+    }
+  },
+  "temporal_ood": {
+    "candidates_extracted": 10414775,
+    "after_8080_homology_removal": 4494268,
+    "homology_removed": 5920507,
+    "by_release": {"23.0": 738779, "25.0": 3755489},
+    "exact_overlap_with_train": 0
+  },
+  "leakage_gates": {
+    "exact_canonical_overlap_between_splits": 0,
+    "clusters_crossing_splits": 0,
+    "temporal_exact_overlap_with_train": 0,
+    "overall": true
+  },
+  "intended_uses": [
+    "autoregressive ncRNA causal LM pretraining/validation/test",
+    "tokenizer (NUC/BPE/Unigram/k-mer) comparison",
+    "static tokenization vs dynamic segmentation/patching comparison",
+    "family-held-out, length-OOD, temporal-OOD generalization evaluation"
+  ],
+  "limitations": [
+    "release 22 only; release 27 (newest) not included per frozen Temporal-OOD=23-26 contract; extension requires Goal amendment",
+    "reverse complements not silently merged (directionality preserved); reported separately if needed",
+    "computational proxies (structure/CM/MFE) are not wet-lab validation"
+  ]
+}

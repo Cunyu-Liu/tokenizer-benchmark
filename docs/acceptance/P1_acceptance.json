@@ -1,0 +1,108 @@
+{
+  "phase": "Phase 1: Data benchmark",
+  "status": "PASS_CLOSED",
+  "timestamp_utc": "2026-08-09T06:40:00Z",
+  "data_anchor": "RNAcentral release 22.0 (2023-08-02)",
+  "acceptance_criteria": [
+    {
+      "criterion": "Source, release, license, accession, hash closure",
+      "result": "PASS",
+      "evidence": "docs/data/P1_data_acquisition.json; per-sequence md5 cross-check 1000/1000 matched against RNAcentral md5.tsv"
+    },
+    {
+      "criterion": "Canonicalization primary alphabet A/C/G/U, T->U, uppercase",
+      "result": "PASS",
+      "evidence": "30,191,670 input -> 29,252,916 primary / 938,754 QC"
+    },
+    {
+      "criterion": "Exact dedup preserving accession mapping",
+      "result": "PASS",
+      "evidence": "29,252,916 -> 29,012,227 unique canonical (240,689 duplicates merged)"
+    },
+    {
+      "criterion": "80/80 homology cluster does not cross split",
+      "result": "PASS",
+      "evidence": "P1_leakage_report.json clusters_crossing_splits=0; n_clusters=3,357,201"
+    },
+    {
+      "criterion": "Canonical exact overlap zero across splits (80/80)",
+      "result": "PASS",
+      "evidence": "P1_leakage_report.json all split-pair overlaps=0"
+    },
+    {
+      "criterion": "90/90 sensitivity cluster does not cross split",
+      "result": "PASS",
+      "evidence": "P1_leakage_report_9090.json clusters_crossing_splits=0; n_clusters=5,162,538"
+    },
+    {
+      "criterion": "Canonical exact overlap zero across splits (90/90)",
+      "result": "PASS",
+      "evidence": "P1_leakage_report_9090.json all split-pair overlaps=0"
+    },
+    {
+      "criterion": "Family/clan held-out split with eligible family >=100 seq & >=10 clusters",
+      "result": "PASS",
+      "evidence": "split_8080.log family_test=7,082,895 family_validation=7,525,752"
+    },
+    {
+      "criterion": "Temporal OOD (23-26) new accessions, exact + 80/80 homology removed vs train",
+      "result": "PASS",
+      "evidence": "temporal_ood_clean.parquet; 10,414,775 -> 4,494,268 kept, 5,920,507 removed; exact_overlap_with_train=0"
+    },
+    {
+      "criterion": "Test / family-test / temporal OOD sealed",
+      "result": "PASS",
+      "evidence": "split manifests + leakage reports confirm no leakage"
+    },
+    {
+      "criterion": "Datasheet + leakage report produced",
+      "result": "PASS",
+      "evidence": "docs/data/P1_datasheet.json; P1_leakage_report.json; P1_leakage_report_9090.json"
+    }
+  ],
+  "split_counts_8080": {
+    "train": 14130321,
+    "validation": 164280,
+    "test": 108979,
+    "family_test": 7082895,
+    "family_validation": 7525752
+  },
+  "split_counts_9090": {
+    "train": 21532511,
+    "validation": 190652,
+    "test": 226326,
+    "family_test": 1727200,
+    "family_validation": 5335538
+  },
+  "temporal_ood": {
+    "candidates": 10414775,
+    "kept_after_8080_homology": 4494268,
+    "by_release": {
+      "23.0": 738779,
+      "25.0": 3755489
+    }
+  },
+  "artifact_hashes": {
+    "release22_split_8080.parquet": "eaa9e44ff760d79ad0f52debb555ebf808afa6adda7bb09644215bec72586b8a",
+    "release22_split_9090.parquet": "a63c39c0ec606153442ed4eb42e25968f1eca180ec423fe05dcf2b9b21772ae7",
+    "temporal_ood_clean.parquet": "21176a849940f7fb0af3a3436e184c566b5341db2dcecfaa213b8638ba04a426",
+    "release22_cluster_8080.parquet": "bd8347ab0bfdf5c2970789730f5315544ffd7f5e73136622eba80406b75c06ca",
+    "release22_cluster_9090.parquet": "b887bfdf98fdc58f18239cbc3d8ad688bd6f06e34a3aa7b83c34e8334b74b811"
+  },
+  "deliverables": [
+    "release22_primary.parquet",
+    "release22_qc.parquet",
+    "release22_dedup.parquet",
+    "release22_cluster_8080.parquet",
+    "release22_cluster_9090.parquet",
+    "release22_split_8080.parquet",
+    "release22_split_9090.parquet",
+    "temporal_ood_clean.parquet",
+    "docs/data/P1_datasheet.json",
+    "docs/data/P1_data_acquisition.json",
+    "P1_leakage_report.json",
+    "P1_leakage_report_9090.json",
+    "docs/acceptance/P1_acceptance.json"
+  ],
+  "next_phase": "Phase 2: Unified evaluator and protocol (tokenizer specs, shared scorer, continuation/generation evaluator, external model adapter schema, sealed-test gate, oracle fixtures)"
+}
