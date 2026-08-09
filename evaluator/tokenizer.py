@@ -144,6 +144,9 @@ class BPETokenizer(TokenizerBase):
         self._id_to_token = list(ALPHABET)
         self._token_to_id = {t: i for i, t in enumerate(ALPHABET)}
         self.model_file_hash = None
+        self._INF_RANK = 1 << 30
+        self._merge_rank: dict[str, int] = {}
+        self._merge_rank_by_pair: dict[tuple[str, str], int] = {}
 
     def fit(self, sequences: Iterable[str], max_merges: Optional[int] = None) -> None:
         """Learn BPE merges from train sequences only.
@@ -229,22 +232,77 @@ class BPETokenizer(TokenizerBase):
         for a, b in merges:
             self._id_to_token.append(a + b)
         self._token_to_id = {t: i for i, t in enumerate(self._id_to_token)}
+        # rank maps for efficient rank-based encode: a merged token's rank is its
+        # merge index (earliest merge = rank 0); pair -> rank for the heap.
+        self._merge_rank = {a + b: i for i, (a, b) in enumerate(merges)}
+        self._merge_rank_by_pair = {(a, b): i for i, (a, b) in enumerate(merges)}
 
     def encode(self, seq: str) -> list[int]:
+        """Left-to-right greedy BPE encode.
+
+        Rank-based heap encode: each merged token carries its merge index as a
+        rank (base tokens rank = infinity). Adjacent pairs that are a valid merge
+        are pushed on a min-heap keyed by (merge_rank, left_pos); we repeatedly pop
+        the smallest-rank pair, merge it, and refresh only its two local neighbors.
+        This reproduces the exact left-to-right greedy result of the naive
+        per-merge scan but in O(n log n) instead of O(n * merges), so encoding long
+        ncRNA sequences is feasible. Deterministic: ties broken by left position.
+        """
+        import heapq
         toks = list(_canon(seq))
-        for a, b in self.merges:
-            merged = a + b
-            nt = []
-            i = 0
-            while i < len(toks):
-                if i + 1 < len(toks) and toks[i] == a and toks[i + 1] == b:
-                    nt.append(merged)
-                    i += 2
-                else:
-                    nt.append(toks[i])
-                    i += 1
-            toks = nt
-        return [self._token_to_id[t] for t in toks]
+        n = len(toks)
+        if n <= 1:
+            return [self._token_to_id[t] for t in toks]
+        # rank of each token: merge index if merged, else large (base).
+        tok_rank = [self._merge_rank.get(t, self._INF_RANK) for t in toks]
+        # doubly-linked list via arrays.
+        prev = list(range(-1, n - 1))
+        nxt = list(range(1, n + 1))
+        nxt[n - 1] = -1
+        alive = [True] * n
+        heap = []
+        # merge_rank: pair (a,b) -> its merge index (0 = earliest/first merge).
+        mr = self._merge_rank_by_pair
+
+        def push(i: int) -> None:
+            if i < 0 or not alive[i]:
+                return
+            j = nxt[i]
+            if j < 0 or not alive[j]:
+                return
+            key = (toks[i], toks[j])
+            r = mr.get(key)
+            if r is not None:
+                heapq.heappush(heap, (r, i))
+
+        for i in range(n - 1):
+            push(i)
+
+        while heap:
+            r, i = heapq.heappop(heap)
+            if not alive[i]:
+                continue
+            j = nxt[i]
+            if j < 0 or not alive[j]:
+                continue
+            key = (toks[i], toks[j])
+            if mr.get(key) != r:
+                continue  # stale entry
+            merged_tok = key[0] + key[1]
+            toks[i] = merged_tok
+            tok_rank[i] = r
+            alive[j] = False
+            # link i's next to j's next
+            k = nxt[j]
+            nxt[i] = k
+            if k >= 0:
+                prev[k] = i
+            # refresh local neighbors
+            p = prev[i]
+            push(p)
+            push(i)
+
+        return [self._token_to_id[toks[i]] for i in range(n) if alive[i]]
 
     def decode(self, ids: list[int]) -> str:
         return "".join(self._id_to_token[i] for i in ids)
