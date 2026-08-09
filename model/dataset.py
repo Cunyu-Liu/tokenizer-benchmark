@@ -82,6 +82,35 @@ def build_tokenizer(arm: ArmSpec, train_seqs: list[str]):
     raise ValueError("unknown tokenizer_type %r" % t)
 
 
+# Deterministic per-arm tokenizer, keyed by arm id. BPE/Unigram vocab is fit on
+# a fixed train-only sample (same seed) so it is identical across train/val and
+# across seeds. Cached because the training loop is entered once per arm.
+_arm_tok_cache: dict = {}
+_VOCAB_TRAIN_N = 200_000
+_VOCAB_TRAIN_SEED = 17
+
+
+def build_arm_tokenizer(path: str, arm: ArmSpec):
+    """Build the frozen, train-only tokenizer for an arm (deterministic).
+
+    Deterministic (NUC / k-mer / BLT) tokenizers need no fit. BPE/Unigram are
+    fit on a fixed sample of train sequences only (contract 3.1: vocab built
+    from train split only). Result is cached by arm id so train and validation
+    iterators share the identical tokenizer.
+    """
+    cached = _arm_tok_cache.get(arm.id)
+    if cached is not None:
+        return cached
+    if arm.tokenizer_type in ("BPE", "Unigram"):
+        sample = sample_train_sequences(path, n=_VOCAB_TRAIN_N,
+                                        seed=_VOCAB_TRAIN_SEED, split="train")
+        tok = build_tokenizer(arm, sample)
+    else:
+        tok = build_tokenizer(arm, [])
+    _arm_tok_cache[arm.id] = tok
+    return tok
+
+
 def _window(seq: str, context_nt: int, tok) -> tuple[list[int], list[int]]:
     """Return (input_ids, targets) for one context window of a sequence."""
     ids = tok.encode(seq)
@@ -97,7 +126,8 @@ def _window(seq: str, context_nt: int, tok) -> tuple[list[int], list[int]]:
 
 def iter_train_batches(path: str, cfg, boundary_provider=None,
                        batch_size: int = 32, max_batches: int | None = None,
-                       seed: int = 0, split: str = "train", batch_nt: int | None = None):
+                       seed: int = 0, split: str = "train", batch_nt: int | None = None,
+                       tok=None):
     """Stream train batches via pyarrow row groups. Yields dict batches.
 
     flat: {"token_ids": (B,T), "targets": (B,T)}
@@ -107,10 +137,13 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
     pad an entire fixed-size batch and OOM the quadratic self-attention:
       - `batch_nt` set  -> adaptive nt-budgeted batching (n * max_len <= batch_nt)
       - `batch_nt` None -> fixed `batch_size` sequences per batch
+
+    `tok` is the per-arm train-only tokenizer (see build_arm_tokenizer). When
+    None it is built deterministically from a train-only sample.
     """
     import pyarrow.parquet as pq
 
-    tok = build_tokenizer(cfg.arm, [])
+    tok = tok if tok is not None else build_arm_tokenizer(path, cfg.arm)
     context_nt = cfg.context_nt
     pf = pq.ParquetFile(path)
 

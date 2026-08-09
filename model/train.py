@@ -82,7 +82,8 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
           max_batches=None, log_every=50, checkpoint_interval_nt=2_000_000,
           checkpoint_dir=None, start_seed=0, calib: EntropyCalib | None = None,
           budget_nt: int | None = None, lr: float | None = None,
-          peak_mem: bool = False, batch_nt: int | None = None):
+          peak_mem: bool = False, batch_nt: int | None = None,
+          return_model: bool = False):
     """Run one full training budget. Checkpoints by valid target nt.
 
     `budget_nt`/`lr` optionally override the frozen config (used by smoke,
@@ -185,7 +186,62 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
     }
     if peak_mem:
         ret["peak_vram_mb"] = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+    if return_model:
+        ret["model"] = model
     return ret
+
+
+def validate_on_split(cfg, model, data_path, device="cuda:0",
+                      calib: EntropyCalib | None = None,
+                      split: str = "validation", val_nt: int = 2_000_000,
+                      batch_nt: int = 8192, seed: int = 0) -> dict:
+    """Evaluation of a trained model on a held-out split (contract 3.4).
+
+    Streams the given split (default validation) once, computes a cumulative
+    nt-weighted loss (same objective as training: mean CE over valid targets),
+    and returns the scalar. Used to select hyper-parameters (LR) on validation
+    only, never on test. GPU-only; cpu_fallback_count must stay 0.
+    """
+    guard = GPUGuard(device)
+    guard.check()
+    policy = _patch_policy_for_arm(cfg, calib=calib, device=device)
+    entropy_policy = policy if isinstance(policy, EntropyPatchPolicy) else None
+    dataset_policy = None if entropy_policy is not None else policy
+    model.eval()
+
+    gen = iter_train_batches(
+        data_path, cfg, boundary_provider=dataset_policy,
+        batch_size=8, max_batches=None, seed=seed, split=split, batch_nt=batch_nt)
+
+    total_nll = 0.0
+    total_nt = 0
+    n_batches = 0
+    with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        for batch in gen:
+            tok = _tensor(batch, device, "token_ids")
+            tgt = _tensor(batch, device, "targets")
+            if cfg.arm.backbone == "blt":
+                if entropy_policy is not None:
+                    bnd = entropy_policy.boundaries_batch(tok)
+                else:
+                    bnd = _tensor(batch, device, "boundary").float()
+                logits, loss = model(tok, bnd, targets=tgt)
+            else:
+                logits, loss = model(tok, targets=tgt)
+            if loss is None:
+                continue
+            vnt = count_valid_nt(batch)
+            total_nll += float(loss.item()) * vnt
+            total_nt += vnt
+            n_batches += 1
+            if total_nt >= val_nt:
+                break
+    return {
+        "val_loss": total_nll / max(1, total_nt),
+        "val_nt": total_nt,
+        "val_batches": n_batches,
+        "cpu_fallback_count": guard.cpu_fallback_count,
+    }
 
 
 def smoke_run(cfg, data_path, device="cuda:0", budget_nt=100_000, batch_size=16):

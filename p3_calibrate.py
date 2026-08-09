@@ -34,11 +34,14 @@ sys.path.insert(0, ".")
 import torch
 
 from model import train_config as tc
-from model.train import train
+from model.train import train, validate_on_split
 from model.entropy_predictor import calibrate_entropy, EntropyCalib
 
 SPLIT_8080 = "/mnt/cunyuliu/tokenizer-benchmark/data/derived/split/release22_split_8080.parquet"
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3"]
+# Contract 3.4: LR candidates are selected by a validation metric. val metrics
+# are computed on a fixed validation-nt budget, never on test.
+VAL_NT = 2_000_000
 
 
 def _device(dev: str) -> str:
@@ -87,8 +90,19 @@ def run_arm(arm_id: str, dev: str, mode: str, steps: int, lr_factor: float,
     res = train(small, SPLIT_8080, device=dev, batch_size=batch_size,
                 max_batches=steps, checkpoint_interval_nt=0, log_every=None,
                 calib=calib, budget_nt=small.budget_nt, lr=base_lr,
-                peak_mem=True, batch_nt=batch_nt)
+                peak_mem=True, batch_nt=batch_nt, return_model=(mode == "lr"))
     nt = res["cumulative_valid_target_nt"]
+    if mode == "lr":
+        # Contract 3.4: select LR by a validation metric, never train loss.
+        model = res.pop("model")
+        v = validate_on_split(small, model, SPLIT_8080, device=dev, calib=calib,
+                              split="validation", val_nt=VAL_NT, batch_nt=batch_nt)
+        res["val_loss"] = v["val_loss"]
+        res["val_nt"] = v["val_nt"]
+        res["val_batches"] = v["val_batches"]
+        assert v["cpu_fallback_count"] == 0, "cpu fallback in val %s" % arm_id
+        del model
+        torch.cuda.empty_cache()
     res["arm"] = arm_id
     res["mode"] = mode
     res["batch_size_seq"] = batch_size
@@ -147,8 +161,9 @@ def main():
         }
         with open(os.path.join(out_dir, "phase3_%s_partial.json" % args.mode), "w") as f:
             json.dump(partial, f, indent=2, default=str)
-        print("  -> steps=%d nt=%d loss=%.4f %.2f nt/s peak_vram=%.0fMB fallback=%d" % (
+        print("  -> steps=%d nt=%d loss=%.4f val=%.4f %.2f nt/s peak_vram=%.0fMB fallback=%d" % (
             r["steps"], r["cumulative_valid_target_nt"], r["final_loss"],
+            r.get("val_loss", float("nan")),
             r["throughput_nt_s"], r.get("peak_vram_mb", -1), r["cpu_fallback_count"]), flush=True)
 
     manifest = {
