@@ -7,6 +7,11 @@ the patcher is the ONLY mechanism controlling segmentation (P-arm).
 
 Design keeps the two backbones parameter-matched at the non-embedding layers
 so cross-backbone comparisons are architecture/system, not pure tokenizer.
+
+Gradient checkpointing (on by default) trades a little compute for a large
+drop in peak activation memory, which is required to run the shared context
+(4096 nt) on the 40GB A100 cohort without changing the science (contract 3.4:
+"共同 context 和有效 batch 可运行").
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as ckpt
 
 
 class CausalSelfAttention(nn.Module):
@@ -93,9 +99,11 @@ class _EmbeddingHead(nn.Module):
 class FlatCausalLM(nn.Module):
     """F-arm: causal LM over static token embeddings."""
     def __init__(self, vocab_size, d_model, n_layers, n_heads,
-                 max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None):
+                 max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None,
+                 use_checkpoint=True):
         super().__init__()
         self.d_model = d_model
+        self.use_checkpoint = use_checkpoint
         self.embed_head = _EmbeddingHead(
             vocab_size, d_model, embed_dim=embed_dim, tied=tied_embed)
         self.pos_emb = nn.Parameter(torch.zeros(1, max_len, d_model))
@@ -119,7 +127,10 @@ class FlatCausalLM(nn.Module):
         x = self.embed_head.embed(token_ids)
         x = self.embed_head.up(x) + self.pos_emb[:, :T, :]
         for blk in self.blocks:
-            x = blk(x)
+            if self.use_checkpoint and self.training:
+                x = ckpt(blk, x, use_reentrant=False)
+            else:
+                x = blk(x)
         x = self.ln_f(x)
         h = self.embed_head.down(x)
         logits = self.embed_head.head(h)
@@ -162,9 +173,10 @@ class BLTCausalLM(nn.Module):
     """
     def __init__(self, vocab_size, d_model, n_layers, n_heads,
                  max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None,
-                 patcher=None, default_patch_len=8):
+                 patcher=None, default_patch_len=8, use_checkpoint=True):
         super().__init__()
         self.d_model = d_model
+        self.use_checkpoint = use_checkpoint
         self.embed_head = _EmbeddingHead(
             vocab_size, d_model, embed_dim=embed_dim, tied=tied_embed)
         self.pos_emb = nn.Parameter(torch.zeros(1, max_len, d_model))
@@ -204,7 +216,10 @@ class BLTCausalLM(nn.Module):
         n_patch = patch_emb.size(1)
         x = patch_emb + self.pos_emb[:, :n_patch, :]
         for blk in self.blocks:
-            x = blk(x)
+            if self.use_checkpoint and self.training:
+                x = ckpt(blk, x, use_reentrant=False)
+            else:
+                x = blk(x)
         x = self.ln_f(x)
         # unfold patch logits back to nt positions
         h = self.embed_head.down(x)          # B, n_patch, emb_dim

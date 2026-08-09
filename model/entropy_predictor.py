@@ -12,6 +12,14 @@ are matched on mean patch count (contract 3.2, 5.4).
 The predictor keeps an independent parameter count, train-only budget, and a
 checkpoint hash; it is NOT part of the main BLT backbone parameters
 (contract 3.2: "记录独立参数量、训练 FLOPs、checkpoint hash").
+
+Performance notes (smoke/calib speed):
+  - The entropy collection pass uses nt-budgeted batches so the sequential
+    GRU never has to run over a long padded batch (keeps it fast on 4096-nt
+    contexts).
+  - ``boundaries_from_entropy`` is computed on CPU with a vectorized-over-
+    batch loop instead of one GPU kernel launch per position, which was the
+    O(T) CUDA-launch bottleneck during gate calibration.
 """
 from __future__ import annotations
 
@@ -19,11 +27,17 @@ import hashlib
 from dataclasses import dataclass
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from .dataset import ALPHABET
+
+# Calibration collection: keep the (sequential) GRU cheap and collect a fixed
+# number of positions for a stable gate estimate.
+CALIB_COLLECT_NT = 32768      # per-batch effective nt budget during collection
+CALIB_POSITIONS = 200_000     # total positions collected for gate calibration
 
 
 @dataclass
@@ -73,21 +87,26 @@ class EntropyPredictor(nn.Module):
 def boundaries_from_entropy(ent: torch.Tensor, gate: float) -> torch.Tensor:
     """Hard 0/1 per-position boundaries from per-position entropy (nats).
 
-    Position 0 is always a patch start. A later position i starts a new
-    patch when cumulative entropy since the last start reaches `gate`.
-    Returns same shape as `ent` (B, T).
+    Position 0 is always a patch start. A later position i starts a new patch
+    when cumulative entropy since the last start reaches `gate`. The resetting
+    sum is sequential over positions, so it is computed on CPU with a fast
+    vectorized-over-batch loop (one numpy op per position instead of a CUDA
+    kernel launch per position). Returns same shape as `ent` (B, T).
     """
     B, T = ent.shape
     device = ent.device
-    starts = torch.zeros((B, T), dtype=torch.long, device=device)
-    starts[:, 0] = 1
-    cum = torch.zeros((B,), dtype=torch.float32, device=device)
+    e = ent.detach().cpu().numpy()
+    starts = np.zeros((B, T), dtype=np.float32)
+    starts[:, 0] = 1.0
+    cum = np.zeros((B,), dtype=np.float32)
+    g = float(gate)
     for i in range(1, T):
-        cum = cum + ent[:, i - 1]
-        new_start = cum >= gate
-        starts[:, i] = new_start.long()
-        cum = torch.where(new_start, torch.zeros_like(cum), cum)
-    return starts.float()
+        cum += e[:, i - 1]
+        new_start = cum >= g
+        starts[:, i] = new_start.astype(np.float32)
+        if new_start.any():
+            cum = np.where(new_start, 0.0, cum)
+    return torch.from_numpy(starts).to(device)
 
 
 def patch_lengths_from_bounds(bounds: torch.Tensor) -> list[int]:
@@ -138,7 +157,7 @@ def train_entropy_predictor(
     total_loss = 0.0
     gen = iter_train_batches(
         data_path, cfg, batch_size=batch_size, max_batches=max_batches,
-        seed=seed)  # nt-level for BLT-style; predictor sees raw nt ids
+        seed=seed, batch_nt=CALIB_COLLECT_NT)  # nt-budgeted keeps GRU cheap
     for batch in gen:
         if expo.cumulative_valid_target_nt >= budget_nt:
             break
@@ -191,20 +210,21 @@ def calibrate_entropy(
     from .train_config import resolved_config
     cfg = resolved_config("F1", seed)
 
-    # Accumulate per-position entropy over a train sample. Batches have
-    # variable length after padding, so flatten to a single 1-D stream.
+    # Accumulate per-position entropy over a train sample. Use nt-budgeted
+    # batches so the sequential GRU stays cheap even on 4096-nt contexts, and
+    # cap by total collected positions (CALIB_POSITIONS).
     all_ent = []
+    n_pos = 0
     with torch.no_grad():
-        n_samples = 0
         for batch in iter_train_batches(
-                data_path, cfg, batch_size=batch_size, seed=seed):
+                data_path, cfg, seed=seed, batch_nt=CALIB_COLLECT_NT):
             tok = torch.tensor(batch["token_ids"], dtype=torch.long, device=device)
             ent = predictor.entropy(tok)
             all_ent.append(ent.reshape(-1))
-            n_samples += len(batch["token_ids"])
-            if n_samples >= 200_000:
+            n_pos += ent.numel()
+            if n_pos >= CALIB_POSITIONS:
                 break
-    ent = torch.cat(all_ent, dim=0)
+    ent = torch.cat(all_ent, dim=0)[:CALIB_POSITIONS]
 
     # Choose gate so mean patch length ~ target_patch_len.
     hbar = ent.mean().item()

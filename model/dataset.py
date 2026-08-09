@@ -97,11 +97,16 @@ def _window(seq: str, context_nt: int, tok) -> tuple[list[int], list[int]]:
 
 def iter_train_batches(path: str, cfg, boundary_provider=None,
                        batch_size: int = 32, max_batches: int | None = None,
-                       seed: int = 0, split: str = "train"):
+                       seed: int = 0, split: str = "train", batch_nt: int | None = None):
     """Stream train batches via pyarrow row groups. Yields dict batches.
 
     flat: {"token_ids": (B,T), "targets": (B,T)}
     blt : {"token_ids": (B,T) nt, "boundary": (B,T), "targets": (B,T)}
+
+    Batching is bounded in effective nt so a long (4096-nt) sequence does not
+    pad an entire fixed-size batch and OOM the quadratic self-attention:
+      - `batch_nt` set  -> adaptive nt-budgeted batching (n * max_len <= batch_nt)
+      - `batch_nt` None -> fixed `batch_size` sequences per batch
     """
     import pyarrow.parquet as pq
 
@@ -110,6 +115,7 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
     pf = pq.ParquetFile(path)
 
     batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+    cur_max = 0
     batches = 0
 
     def flush():
@@ -123,7 +129,14 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
             out["boundary"] = [_pad(b, T) for b in batch_bndry]
         return out
 
-    for rb in pf.iter_batches(batch_size=batch_size, columns=["split_membership", "canonical_sequence"]):
+    def would_overflow(L: int) -> bool:
+        if batch_nt is None:
+            return len(batch_tok) >= batch_size
+        if not batch_tok:
+            return False
+        return (len(batch_tok) + 1) * max(cur_max, L) > batch_nt
+
+    for rb in pf.iter_batches(batch_size=50_000, columns=["split_membership", "canonical_sequence"]):
         d = rb.to_pydict()
         for split_v, seq in zip(d["split_membership"], d["canonical_sequence"]):
             if split_v != split:
@@ -136,6 +149,16 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                 nt_ids = [ALPHABET.index(b) for b in c]
                 ctx = nt_ids[:-1]
                 tgt = nt_ids[1:]
+                L = len(ctx)
+                if would_overflow(L):
+                    b = flush()
+                    if b is not None:
+                        yield b
+                        batches += 1
+                        if max_batches is not None and batches >= max_batches:
+                            return
+                    batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+                    cur_max = 0
                 batch_tok.append(ctx)
                 batch_ign.append(tgt)
                 # P3 entropy computes boundaries on GPU from the nt batch, so
@@ -147,17 +170,20 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                 cc, tt = _window(seq, context_nt, tok)
                 if not cc:
                     continue
+                L = len(cc)
+                if would_overflow(L):
+                    b = flush()
+                    if b is not None:
+                        yield b
+                        batches += 1
+                        if max_batches is not None and batches >= max_batches:
+                            return
+                    batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+                    cur_max = 0
                 batch_tok.append(cc)
                 batch_ign.append(tt)
+            cur_max = max(cur_max, L)
             batch_seqcnt.append(1)
-            if len(batch_tok) >= batch_size:
-                b = flush()
-                if b is not None:
-                    yield b
-                    batches += 1
-                    if max_batches is not None and batches >= max_batches:
-                        return
-                batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
     b = flush()
     if b is not None:
         yield b

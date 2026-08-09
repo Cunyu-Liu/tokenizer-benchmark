@@ -80,8 +80,14 @@ def _tensor(batch, device, key):
 
 def train(cfg, data_path, device="cuda:0", batch_size=32,
           max_batches=None, log_every=50, checkpoint_interval_nt=2_000_000,
-          checkpoint_dir=None, start_seed=0, calib: EntropyCalib | None = None):
-    """Run one full training budget. Checkpoints by valid target nt."""
+          checkpoint_dir=None, start_seed=0, calib: EntropyCalib | None = None,
+          budget_nt: int | None = None, lr: float | None = None,
+          peak_mem: bool = False, batch_nt: int | None = None):
+    """Run one full training budget. Checkpoints by valid target nt.
+
+    `budget_nt`/`lr` optionally override the frozen config (used by smoke,
+    calibration and the LR pilot; the science runs use the config values).
+    """
     guard = GPUGuard(device)
     guard.check()
     model = build_model_for_cfg(cfg, device)
@@ -90,29 +96,35 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
     entropy_policy = policy if isinstance(policy, EntropyPatchPolicy) else None
 
     opt = torch.optim.AdamW(
-        model.parameters(), lr=cfg.optim.lr,
+        model.parameters(), lr=lr if lr is not None else cfg.optim.lr,
         betas=cfg.optim.betas, weight_decay=cfg.optim.weight_decay)
 
-    budget = cfg.budget_nt
+    budget = budget_nt if budget_nt is not None else cfg.budget_nt
+    base_lr = lr if lr is not None else cfg.optim.lr
     warmup = cfg.warmup_nt
     expo = Exposure()
     step = 0
     last_ck = 0
     t0 = time.time()
     performed_nt = 0
+    if peak_mem:
+        torch.cuda.reset_peak_memory_stats(device)
 
     def lr_at(nt):
         if nt < warmup:
-            return cfg.optim.lr * (nt / max(1, warmup))
+            return base_lr * (nt / max(1, warmup))
         progress = min(1.0, (nt - warmup) / max(1, budget - warmup))
-        return cfg.optim.lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+        return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
     # For P3 entropy, boundaries are computed on GPU from the nt batch; the
     # dataset does not emit a per-sequence boundary.
     dataset_policy = None if entropy_policy is not None else policy
+    batch_nt = batch_nt if batch_nt is not None else (
+        getattr(cfg, "batch_nt", None) or (batch_size * cfg.context_nt))
     gen = iter_train_batches(
         data_path, cfg, boundary_provider=dataset_policy,
-        batch_size=batch_size, max_batches=max_batches, seed=start_seed)
+        batch_size=batch_size, max_batches=max_batches, seed=start_seed,
+        batch_nt=batch_nt)
 
     for batch in gen:
         if expo.cumulative_valid_target_nt >= budget:
@@ -161,7 +173,7 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
                 loss.item(), opt.param_groups[0]["lr"],
                 performed_nt / max(1e-9, time.time() - t0)))
 
-    return {
+    ret = {
         "run_id": cfg.run_id,
         "steps": step,
         "cumulative_valid_target_nt": expo.cumulative_valid_target_nt,
@@ -171,6 +183,9 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
         "cpu_fallback_count": guard.cpu_fallback_count,
         "wall_seconds": time.time() - t0,
     }
+    if peak_mem:
+        ret["peak_vram_mb"] = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+    return ret
 
 
 def smoke_run(cfg, data_path, device="cuda:0", budget_nt=100_000, batch_size=16):
