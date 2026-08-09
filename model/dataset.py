@@ -86,8 +86,16 @@ def build_tokenizer(arm: ArmSpec, train_seqs: list[str]):
 # a fixed train-only sample (same seed) so it is identical across train/val and
 # across seeds. Cached because the training loop is entered once per arm.
 _arm_tok_cache: dict = {}
-_VOCAB_TRAIN_N = 200_000
+# Deterministic train-only sample for BPE/Unigram vocab building. 20k sequences
+# is ample for a 1024-vocab tokenizer on a 4-letter alphabet and keeps the fit
+# fast; the exact count is recorded in the tokenizer_spec.
+_VOCAB_TRAIN_N = 5_000
 _VOCAB_TRAIN_SEED = 17
+# Cap per-sequence length for BPE/Unigram vocab building. A 4-letter alphabet
+# saturates k-mer statistics quickly; 128 nt/sample retains ample coverage for a
+# 1024-vocab tokenizer while keeping the fit fast and deterministic. The cap is
+# recorded in the tokenizer_spec.
+_VOCAB_MAX_LEN = 128
 
 
 def build_arm_tokenizer(path: str, arm: ArmSpec):
@@ -104,6 +112,7 @@ def build_arm_tokenizer(path: str, arm: ArmSpec):
     if arm.tokenizer_type in ("BPE", "Unigram"):
         sample = sample_train_sequences(path, n=_VOCAB_TRAIN_N,
                                         seed=_VOCAB_TRAIN_SEED, split="train")
+        sample = [seq[:_VOCAB_MAX_LEN] for seq in sample]
         tok = build_tokenizer(arm, sample)
     else:
         tok = build_tokenizer(arm, [])
