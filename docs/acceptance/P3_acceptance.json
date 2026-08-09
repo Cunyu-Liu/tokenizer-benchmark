@@ -1,0 +1,100 @@
+{
+  "phase": "Phase 3: Model implementation and GPU calibration",
+  "status": "PASS_CLOSED",
+  "timestamp_utc": "2026-08-09T17:30:00Z",
+  "deliverables": [
+    "model/arms.py",
+    "model/backbone.py",
+    "model/patch.py",
+    "model/entropy_predictor.py",
+    "model/dataset.py",
+    "model/train.py",
+    "model/train_config.py",
+    "model/census.py",
+    "p3_calibrate.py",
+    "p3_report.py",
+    "p3_throughput_report.py",
+    "tests/test_train_config.py",
+    "tests/test_training.py"
+  ],
+  "acceptance_criteria": [
+    {
+      "criterion": "Ten-arm 100M matrix resolved (F1-F7 static track + P1-P3 BLT patch track), matched-track non-embedding params identical",
+      "result": "PASS",
+      "evidence": "model/arms.py; test_all_100M_arms_in_target_range; test_non_embedding_identical_within_scale"
+    },
+    {
+      "criterion": "Clean flat (FlatCausalLM) and clean BLT (BLTCausalLM) backbones run forward/backward on CUDA with gradient checkpointing",
+      "result": "PASS",
+      "evidence": "model/backbone.py; test_gpu_smoke_train_flat; test_gpu_smoke_train_blt_fixed"
+    },
+    {
+      "criterion": "Per-arm 20-step GPU smoke on real frozen train split, all arms, cpu_fallback=0",
+      "result": "PASS",
+      "evidence": "runs/phase3_smoke_20260809T191230/phase3_smoke_report.json (10/10 arms fallback=0)"
+    },
+    {
+      "criterion": "Per-arm 200-step calibration on real frozen train split, all 10 arms, same hardware cohort, cpu_fallback=0",
+      "result": "PASS",
+      "evidence": "runs/phase3_calib_20260809T192557/phase3_calib_report.json (10/10 arms fallback=0)"
+    },
+    {
+      "criterion": "Parameter/FLOP/exposure census: all arms within 2% of 100M nominal, exposure in cumulative valid target nt, FLOPs estimated per token",
+      "result": "PASS",
+      "evidence": "model/census.py; runs/phase3_throughput_memory_report.json (all_arms_in_100M_tolerance=True, matched_non_embedding_params=True)"
+    },
+    {
+      "criterion": "Throughput/memory/compute-fairness report: same hardware cohort (A100-40GB, batch_nt=8192), comparable nt/s",
+      "result": "PASS",
+      "evidence": "runs/phase3_throughput_memory_report.json (gate=True, same_hardware_cohort=True)"
+    },
+    {
+      "criterion": "Equal-budget LR pilot 0.5x/1.0x/2.0x base_lr on seed 17, each candidate <=100M valid nt",
+      "result": "PASS",
+      "evidence": "runs/phase3_lr_f*_20260809T232510_fixedval/phase3_lr_report.json (300 steps, ~1M valid nt per candidate; all_cpu_fallback_zero=True, all_finite=True)"
+    },
+    {
+      "criterion": "LR selected by validation metric (contract 3.4) then frozen; never train loss / test",
+      "result": "PASS",
+      "evidence": "model/train_config.py LR_FACTOR_SELECTED (F1-F7/P1/P2=2.0x, P3=1.0x); lr chosen by lowest val_loss in phase3_lr_report_aggregate.json; test_frozen_lr_selection_applied"
+    },
+    {
+      "criterion": "Train/eval parity and no future leakage (vocab built from train split only)",
+      "result": "PASS",
+      "evidence": "test_build_arm_tokenizer_bpe_not_degenerate; test_gpu_validate_on_split_flat; shared train-only tokenizer"
+    },
+    {
+      "criterion": "GPU-only execution enforced (CPU fallback denied); no silent CPU degradation",
+      "result": "PASS",
+      "evidence": "model/census.py GPUGuard; all smoke/calib/LR reports cpu_fallback_count=0"
+    }
+  ],
+  "locks": {
+    "lr_factor_selected": {
+      "F1": 2.0, "F2": 2.0, "F3": 2.0, "F4": 2.0, "F5": 2.0,
+      "F6": 2.0, "F7": 2.0, "P1": 2.0, "P2": 2.0, "P3": 1.0
+    },
+    "base_lr_100M": 0.0003,
+    "optimizer": {"betas": [0.9, 0.95], "weight_decay": 0.1, "dtype": "bf16"},
+    "context_nt": 4096,
+    "budget_nt_100M": 2000000000,
+    "batch_nt": 32768,
+    "seeds": [17, 29, 43],
+    "tune_seed": 17
+  },
+  "artifacts": {
+    "smoke_report": "runs/phase3_smoke_20260809T191230/phase3_smoke_report.json",
+    "calib_report": "runs/phase3_calib_20260809T192557/phase3_calib_report.json",
+    "lr_aggregate_report": "runs/phase3_lr_report_aggregate.json",
+    "lr_aggregate_report_sha256": "b47203ce8c1a93505ec0d5f08172d682b66994aa760560d29b2854a7e5ff8452",
+    "throughput_memory_report": "runs/phase3_throughput_memory_report.json",
+    "throughput_memory_report_sha256": "5ad53f03b6ba0647477a2f1a0f7f1134e52bebee5d83b79161d10361536b0e87",
+    "calib_report_sha256": "740ae23965f2feda7688795c0efb94e87bb7c1b2b186a34b999641db5337b47d"
+  },
+  "test_summary": {
+    "total": 87,
+    "passed": 87,
+    "failed": 0
+  },
+  "next_phase": "Phase 4: 100M full matrix (10 arms x 3 seeds, 2.0B valid nt; validation checkpoints; frozen decoder; one-time sealed test; main likelihood/continuation/generation/efficiency tables)"
+}

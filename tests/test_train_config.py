@@ -65,6 +65,27 @@ def test_lr_tuning_candidates_seed17_only():
         tc.lr_tuning_candidates(tc.resolved_config("F1", 29))
 
 
+def test_frozen_lr_selection_applied():
+    # Contract 3.4: LR selected by validation metric, then frozen. Phase 3 pilot
+    # selected 2.0x for every 100M arm except P3 (1.0x); untuned arms (350M C*)
+    # stay at base 1.0x. Every 100M tuned arm must carry its frozen factor.
+    for arm_id, factor in tc.LR_FACTOR_SELECTED.items():
+        cfg = tc.resolved_config(arm_id, tc.TUNE_SEED)
+        assert abs(cfg.optim.lr - tc.base_lr_for_scale("100M") * factor) < 1e-12, \
+            "%s lr %r != base*%s" % (arm_id, cfg.optim.lr, factor)
+    # P3 (entropy-patch) is the single arm frozen at 1.0x.
+    assert tc.LR_FACTOR_SELECTED["P3"] == 1.0
+    assert tc.resolved_config("F1", 17).optim.lr == 3e-4 * 2.0
+
+
+def test_frozen_lr_untuned_arms_default_base():
+    # 350M arms (C1-C4) have no 100M pilot selection yet: they must stay at base.
+    for a in ARMS_350M:
+        cfg = tc.resolved_config(a.id, tc.TUNE_SEED, scale="350M", batch_nt=65536)
+        assert abs(cfg.optim.lr - tc.base_lr_for_scale("350M")) < 1e-12, \
+            "%s unexpectedly tuned lr=%r" % (a.id, cfg.optim.lr)
+
+
 def test_build_model_output_vocab():
     cfg = tc.resolved_config("F2", 17)  # BPE vocab 1024
     m = tc.build_model(cfg)

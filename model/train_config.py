@@ -30,6 +30,15 @@ BASE_LR_350M = 2e-4
 LR_CANDIDATES = (0.5, 1.0, 2.0)
 TUNE_SEED = 17
 TUNE_BUDGET_NT = 100_000_000
+# Frozen per-arm LR factor selected by validation metric on seed 17 (contract 3.4:
+# select by a validation metric, then freeze). Evidence: Phase 3 LR pilot aggregate
+# /mnt/cunyuliu/tokenizer-benchmark/runs/phase3_lr_report_aggregate.json
+# (2026-08-09, 10-arm 100M matrix, 300 optimizer steps / ~1M valid nt per candidate,
+# all_cpu_fallback_zero=True, all_finite=True). 9/10 arms pick 2.0x; P3 picks 1.0x.
+LR_FACTOR_SELECTED = {
+    "F1": 2.0, "F2": 2.0, "F3": 2.0, "F4": 2.0, "F5": 2.0,
+    "F6": 2.0, "F7": 2.0, "P1": 2.0, "P2": 2.0, "P3": 1.0,
+}
 
 
 @dataclass(frozen=True)
@@ -192,7 +201,9 @@ def resolved_config(arm_id: str, seed: int, scale: str = "100M",
     arch = solve_arch(target)
     embed = solve_embed(arm.vocab_size, arch, target, arch.max_len)
     budget = budget_for_scale(scale)
-    lr = base_lr_for_scale(scale)
+    # Contract 3.4: LR frozen by validation selection (LR_FACTOR_SELECTED).
+    # Untuned arms (e.g. 350M C1-C4 until their pilot runs) default to base 1.0x.
+    lr = base_lr_for_scale(scale) * LR_FACTOR_SELECTED.get(arm_id, 1.0)
     entropy_params = 0
     if arm.tokenizer_type == "entropy_patch":
         # P3/C4: entropy boundary predictor trained on train split only.
@@ -256,10 +267,14 @@ def all_350M(seed: int | None = None) -> list[RunConfig]:
 
 
 def lr_tuning_candidates(cfg: RunConfig) -> list[float]:
-    """Contract 3.4: base_lr * {0.5, 1.0, 2.0}, tuned on seed 17 only."""
+    """Contract 3.4: base_lr * {0.5, 1.0, 2.0}, tuned on seed 17 only.
+
+    Anchored to the scale base LR (not the frozen, validation-selected lr), so
+    the candidate grid is identical regardless of the final LR freeze.
+    """
     if cfg.seed != TUNE_SEED:
         raise ValueError("LR tuning only on seed %d" % TUNE_SEED)
-    return [cfg.optim.lr * f for f in LR_CANDIDATES]
+    return [base_lr_for_scale(cfg.scale) * f for f in LR_CANDIDATES]
 
 
 def arm_(id_: str) -> ArmSpec:
