@@ -183,8 +183,10 @@ class BLTCausalLM(nn.Module):
         x = self.ln_f(x)
         # unfold patch logits back to nt positions
         logits_patch = self.lm_head(x)  # B, n_patch, vocab
-        # for each nt position, use its patch's logits
-        per_nt = logits_patch[:, seg]  # B,T,vocab
+        # for each nt position, use its patch's logits (gather on patch dim)
+        vocab = logits_patch.size(-1)
+        per_nt = torch.gather(
+            logits_patch, 1, seg.unsqueeze(-1).expand(-1, -1, vocab))  # B,T,vocab
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
