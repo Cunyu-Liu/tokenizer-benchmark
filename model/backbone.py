@@ -64,22 +64,46 @@ class Block(nn.Module):
         return x
 
 
+class _EmbeddingHead(nn.Module):
+    """Optional factorized/tied embedding + head for large vocabularies (3.4)."""
+    def __init__(self, vocab_size, d_model, embed_dim=None, tied=True):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.d_model = d_model
+        self.embed_dim = embed_dim if embed_dim is not None else d_model
+        self.factorized = self.embed_dim != d_model
+        self.tok_emb = nn.Embedding(vocab_size, self.embed_dim)
+        if self.factorized:
+            self.up = nn.Linear(self.embed_dim, d_model, bias=False)
+            self.down = nn.Linear(d_model, self.embed_dim, bias=False)
+        else:
+            self.up = nn.Identity()
+            self.down = nn.Identity()
+        self.lm_head = nn.Linear(self.embed_dim, vocab_size, bias=False)
+        if tied:
+            self.lm_head.weight = self.tok_emb.weight
+
+    def embed(self, ids):
+        return self.tok_emb(ids)
+
+    def head(self, h):
+        return self.lm_head(h)
+
+
 class FlatCausalLM(nn.Module):
     """F-arm: causal LM over static token embeddings."""
     def __init__(self, vocab_size, d_model, n_layers, n_heads,
-                 max_len=4096, dropout=0.0, tied_embed=True):
+                 max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None):
         super().__init__()
         self.d_model = d_model
-        self.tok_emb = nn.Embedding(vocab_size, d_model)
+        self.embed_head = _EmbeddingHead(
+            vocab_size, d_model, embed_dim=embed_dim, tied=tied_embed)
         self.pos_emb = nn.Parameter(torch.zeros(1, max_len, d_model))
         nn.init.normal_(self.pos_emb, std=0.02)
         self.blocks = nn.ModuleList(
             Block(d_model, n_heads, dropout=dropout, max_len=max_len)
             for _ in range(n_layers))
         self.ln_f = nn.LayerNorm(d_model)
-        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
-        if tied_embed:
-            self.lm_head.weight = self.tok_emb.weight
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -92,11 +116,13 @@ class FlatCausalLM(nn.Module):
 
     def forward(self, token_ids, targets=None):
         B, T = token_ids.shape
-        x = self.tok_emb(token_ids) + self.pos_emb[:, :T, :]
+        x = self.embed_head.embed(token_ids)
+        x = self.embed_head.up(x) + self.pos_emb[:, :T, :]
         for blk in self.blocks:
             x = blk(x)
         x = self.ln_f(x)
-        logits = self.lm_head(x)
+        h = self.embed_head.down(x)
+        logits = self.embed_head.head(h)
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
@@ -135,20 +161,18 @@ class BLTCausalLM(nn.Module):
     policy (fixed/random/entropy).
     """
     def __init__(self, vocab_size, d_model, n_layers, n_heads,
-                 max_len=4096, dropout=0.0, tied_embed=True,
+                 max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None,
                  patcher=None, default_patch_len=8):
         super().__init__()
         self.d_model = d_model
-        self.tok_emb = nn.Embedding(vocab_size, d_model)
+        self.embed_head = _EmbeddingHead(
+            vocab_size, d_model, embed_dim=embed_dim, tied=tied_embed)
         self.pos_emb = nn.Parameter(torch.zeros(1, max_len, d_model))
         nn.init.normal_(self.pos_emb, std=0.02)
         self.blocks = nn.ModuleList(
             Block(d_model, n_heads, dropout=dropout, max_len=max_len)
             for _ in range(n_layers))
         self.ln_f = nn.LayerNorm(d_model)
-        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
-        if tied_embed:
-            self.lm_head.weight = self.tok_emb.weight
         self.patcher = patcher
         self.default_patch_len = default_patch_len
         self.apply(self._init_weights)
@@ -172,17 +196,19 @@ class BLTCausalLM(nn.Module):
     def forward(self, nt_ids, boundary, targets=None):
         B, T = nt_ids.shape
         seg = self._segments(nt_ids, boundary)
-        # patch embedding = mean of token embeddings in segment
+        # patch embedding = mean of nucleotide embeddings in segment
         mask = F.one_hot(seg, num_classes=seg.max() + 1).permute(0, 2, 1).float()
-        seq_emb = self.tok_emb(nt_ids)  # B,T,C
-        patch_emb = mask @ seq_emb  # B, n_patch, C
+        seq_emb = self.embed_head.embed(nt_ids)  # B,T,emb_dim
+        patch_emb = mask @ seq_emb  # B, n_patch, emb_dim
+        patch_emb = self.embed_head.up(patch_emb)  # B, n_patch, d_model
         n_patch = patch_emb.size(1)
         x = patch_emb + self.pos_emb[:, :n_patch, :]
         for blk in self.blocks:
             x = blk(x)
         x = self.ln_f(x)
         # unfold patch logits back to nt positions
-        logits_patch = self.lm_head(x)  # B, n_patch, vocab
+        h = self.embed_head.down(x)          # B, n_patch, emb_dim
+        logits_patch = self.embed_head.head(h)  # B, n_patch, vocab
         # for each nt position, use its patch's logits (gather on patch dim)
         vocab = logits_patch.size(-1)
         per_nt = torch.gather(

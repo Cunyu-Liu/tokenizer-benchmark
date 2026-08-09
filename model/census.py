@@ -31,15 +31,29 @@ class Census:
         return abs(self.total_params - other.total_params) / self.total_params <= tol
 
 
+# Parameter names counted as EMBEDDING (excluded from non-embedding):
+#   tok_emb / lm_head / pos_emb / embed_head.up / embed_head.down
+_EMBEDDING_MARKERS = ("tok_emb", "lm_head", "pos_emb", "embed_head.up", "embed_head.down")
+
+
 def count_params(model) -> Census:
     total = 0
     non_emb = 0
     for name, p in model.named_parameters():
         n = p.numel()
         total += n
-        if "tok_emb" not in name and "lm_head" not in name and "pos_emb" not in name:
+        if not any(m in name for m in _EMBEDDING_MARKERS):
             non_emb += n
     return Census(total_params=total, non_embedding_params=non_emb)
+
+
+def embedding_params(model) -> int:
+    """Total embedding-related trainable params (incl. factorized proj/head)."""
+    total = 0
+    for name, p in model.named_parameters():
+        if any(m in name for m in _EMBEDDING_MARKERS):
+            total += p.numel()
+    return total
 
 
 def estimate_attention_flops(q, k, v) -> float:
