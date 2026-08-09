@@ -12,6 +12,7 @@ Only real target positions count toward budget_nt.
 from __future__ import annotations
 
 import random
+import zlib
 from dataclasses import dataclass
 
 from .arms import ArmSpec
@@ -34,6 +35,19 @@ class Exposure:
 
 def _canon(s: str) -> str:
     return s.upper().replace("T", "U")
+
+
+def _seq_id(canon: str) -> int:
+    """Stable per-sequence id for sequence-specific random patch (contract 3.2).
+
+    A deterministic 32-bit hash of the canonical sequence. Using content (not a
+    running index) guarantees:
+      - train / eval see the identical random boundary pattern for the same
+        sequence (no train/eval mismatch),
+      - prefix consistency (the boundary sampled from position 0 is unchanged
+        when the sequence is truncated to any prefix).
+    """
+    return zlib.crc32(canon.encode("utf-8"))
 
 
 def sample_train_sequences(path: str, n: int, seed: int, split: str = "train"):
@@ -207,7 +221,13 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                 # the dataset emits no per-sequence boundary when provider is
                 # None (training loop derives them online).
                 if boundary_provider is not None:
-                    batch_bndry.append(boundary_provider.boundary(c, len(c))[:-1])
+                    # Contract 3.2: P2 random patch boundaries must be decided by
+                    # (sequence_id + seed) with prefix consistency. Use a stable
+                    # per-sequence content hash so train and eval (and any prefix)
+                    # reproduce the identical boundary pattern. Fixed/entropy
+                    # policies ignore seq_id.
+                    batch_bndry.append(
+                        boundary_provider.boundary(c, len(c), _seq_id(c))[:-1])
             else:
                 cc, tt = _window(seq, context_nt, tok)
                 if not cc:

@@ -10,6 +10,12 @@ Per-arm likelihood accounting (3.5):
   - F2/F3 BPE/Uni   : canonical_path via log_prob_token (next_base not exact)
   - F6/F7 nonoverlap: canonical_path via log_prob_token
 
+Batched scoring: for flat causal backbones a SINGLE forward over the full
+sequence yields every position's next-token logits (position k conditions only
+on tokens 0..k), so per-position log probs are recovered with O(1) forwards per
+sequence instead of O(T). This makes the 100K-sequence sealed test tractable.
+The batched result is provably identical to the per-position callback path.
+
 GPU-only: construction asserts CUDA and never falls back to CPU (contract 4,
 CPU-fallback ban). `fallback()` returns 0.0 per the neural-execution rule.
 """
@@ -79,6 +85,37 @@ class InternalFlatAdapter(RNAARAdapter):
         with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
             logits, _ = self.model(t, targets=None)
         return logits.float()
+
+    # --- batched (single-forward) scoring, equivalent to per-position path ---
+    def all_log_probs_next_base(self, seq: str) -> list[float]:
+        """Exact per-base log p(x_i | x_<i) for NUC arms in ONE forward."""
+        canon = self.canonicalize(seq)
+        n = len(canon)
+        out = [0.0] * n
+        if n == 0:
+            return out
+        out[0] = -math.log(4.0)  # leading base, no context (no BOS)
+        ids = self.tok.encode(canon)
+        if len(ids) < 1:
+            return out
+        lp = F.log_softmax(self._logits(ids)[0], dim=-1)  # (T, vocab)
+        for i in range(1, n):
+            out[i] = float(lp[i - 1, BASE_TO_IDX[canon[i]]].item())
+        return out
+
+    def all_log_probs_token(self, ids: list[int]) -> list[float]:
+        """Canonical-path token log probs p(tok_i | tok_<i) in ONE forward."""
+        n = len(ids)
+        out = [0.0] * n
+        if n == 0:
+            return out
+        out[0] = -math.log(float(self.vocab))  # first token, uniform prior
+        if n == 1:
+            return out
+        lp = F.log_softmax(self._logits(ids)[0], dim=-1)  # (T, vocab)
+        for i in range(1, n):
+            out[i] = float(lp[i - 1, ids[i]].item())
+        return out
 
     # --- scoring callbacks (RNAARAdapter contract) ---
     def log_prob_token(self, ctx: list[int], token_id: int) -> float:

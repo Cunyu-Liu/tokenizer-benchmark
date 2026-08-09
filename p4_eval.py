@@ -1,21 +1,30 @@
 """Phase 4 sealed-test main-table scorer (contract 3.5, 5.4).
 
-Loads a trained Phase 4 checkpoint (flat backbones F1-F7) and computes the
-likelihood metrics over a held-out split, one batched forward per sequence:
+Loads a trained Phase 4 checkpoint and computes likelihood metrics over a
+held-out split:
 
-  - next_base_BPN     : exact per-base cross-entropy (F1 NUC, F4/F5 overlap)
+  - next_base_BPN     : exact per-base cross-entropy (F1 NUC, F4/F5 overlap,
+                        P1/P2/P3 BLT) -- each real nt scored exactly once.
   - canonical_path_BPN: cumulative token NLL over the canonical token path
                         divided by raw canonical nt count (F2/F3 BPE/Unigram,
-                        F6/F7 non-overlap)
+                        F6/F7 non-overlap).
 
-Reads the frozen split parquet, canonicalizes each sequence, encodes, and
-accumulates ScoreSums via the shared scorer. GPU-only (adapter asserts CUDA);
-results are written as an auditable JSON artifact keyed by (arm, seed, split).
+Flat backbones (F1-F7) are scored with a SINGLE forward per sequence (batched
+log-prob extraction), making the ~100K-sequence sealed test tractable. BLT arms
+(P1/P2/P3) need an exact causal per-base conditional, so each position is
+forwarded on its causal prefix (no future-nt leak within the open patch);
+the checkpoint must carry the persisted entropy calibration for exact boundary
+replay.
+
+Reads the frozen split parquet, canonicalizes each sequence, and accumulates
+ScoreSums via the shared scorer. GPU-only (adapter asserts CUDA); results are
+written as an auditable JSON artifact keyed by (arm, seed, split).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -23,12 +32,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pyarrow.parquet as pq
 
-from evaluator import scorer as S
+from evaluator.scorer import ScoreSums, canonicalize_seq
 from evaluator.internal_adapter import InternalFlatAdapter
+from evaluator.blt_adapter import InternalBLTAdapter
 
 SPLIT_8080 = "/mnt/cunyuliu/tokenizer-benchmark/data/derived/split/release22_split_8080.parquet"
-# Arms that support exact next_base_BPN via full-prefix causal conditioning.
-EXACT_NEXT_BASE = {"F1"}
+# Flat arms that support exact next_base_BPN via full-prefix causal conditioning.
+FLAT_EXACT_NEXT_BASE = {"F1"}
+
+
+def _nats_to_bits(nats: float) -> float:
+    return nats * math.log2(math.e)
+
+
+def _sums_from_logprobs(lp: list[float], n_nt: int) -> ScoreSums:
+    """ScoreSums from a precomputed per-position log-prob list (batched path)."""
+    out = ScoreSums()
+    nats = sum(lp)
+    out.nll_nats_sum = -nats
+    out.nll_bits_sum = _nats_to_bits(-nats)
+    out.valid_nt_count = n_nt
+    out.sequence_count = 1
+    return out
 
 
 def _seqs(split_path: str, split: str, n: int | None = None) -> list[str]:
@@ -44,22 +69,27 @@ def _seqs(split_path: str, split: str, n: int | None = None) -> list[str]:
     return out
 
 
-def score_arm(adapter: InternalFlatAdapter, seqs: list[str], split: str,
-              max_len: int = 4096) -> dict:
+def _metric_for(adapter) -> tuple[str, str]:
+    """Return (metric, scoring_mode). scoring_mode in
+    {next_base_batched, next_base_blt, next_base_overlap, canonical_batched}."""
     arm_type = adapter.arm.tokenizer_type
-    exact = adapter.arm.id in EXACT_NEXT_BASE
+    if adapter.arm.backbone == "blt":
+        return "next_base_BPN", "next_base_blt"
     if arm_type == "overlap_mer":
-        metric = "overlap_path_BPN"
-    elif exact:
-        metric = "next_base_BPN"
-    else:
-        metric = "canonical_path_BPN"
-    agg = S.ScoreSums()
+        return "overlap_path_BPN", "next_base_overlap"
+    if adapter.arm.id in FLAT_EXACT_NEXT_BASE:
+        return "next_base_BPN", "next_base_batched"
+    return "canonical_path_BPN", "canonical_batched"
+
+
+def score_arm(adapter, seqs: list[str], split: str, max_len: int = 4096) -> dict:
+    metric, mode = _metric_for(adapter)
+    agg = ScoreSums()
     n_invalid = 0
     n_trunc = 0
     for seq in seqs:
         try:
-            canon = adapter.canonicalize(seq)
+            canon = canonicalize_seq(seq)
         except ValueError:
             agg.invalid_count += 1
             n_invalid += 1
@@ -67,17 +97,21 @@ def score_arm(adapter: InternalFlatAdapter, seqs: list[str], split: str,
         if len(canon) > max_len:
             canon = canon[:max_len]
             n_trunc += 1
-        if arm_type == "overlap_mer":
-            sums, _ = S.score_overlap_path(canon, adapter.k, adapter.log_prob_next_base)
-        elif exact:
-            # one forward per sequence: encode full nt -> per-base next-base NLL
-            sums = S.score_next_base(canon, adapter.log_prob_next_base)
-        else:
+        if mode == "next_base_batched":
+            # F1 NUC: single forward -> all per-base conditionals.
+            lp = adapter.all_log_probs_next_base(canon)
+            sums = _sums_from_logprobs(lp, len(canon))
+        elif mode == "next_base_overlap":
+            # F4/F5 overlap: exact per-base via short-context k-mer model.
+            sums, _ = _overlap_score(adapter, canon)
+        elif mode == "next_base_blt":
+            # P1/P2/P3: exact causal per-base, one forward per position.
+            from evaluator.scorer import score_next_base
+            sums = score_next_base(canon, adapter.log_prob_next_base)
+        else:  # canonical_batched
             ids = adapter.encode(canon)
-            # count raw canonical nt (compression-path view) excluding a BOS if any
-            n_nt = len(canon)
-            sums = S.score_canonical_path(ids, adapter.log_prob_token)
-            sums.valid_nt_count = n_nt
+            lp = adapter.all_log_probs_token(ids)
+            sums = _sums_from_logprobs(lp, len(canon))
         agg.add(sums)
     return {
         "arm": adapter.arm.id,
@@ -94,6 +128,12 @@ def score_arm(adapter: InternalFlatAdapter, seqs: list[str], split: str,
     }
 
 
+def _overlap_score(adapter, canon: str):
+    """Overlap k-mer next_base scoring (exact, per-position short context)."""
+    from evaluator.scorer import score_overlap_path
+    return score_overlap_path(canon, adapter.k, adapter.log_prob_next_base)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", required=True)
@@ -106,7 +146,12 @@ def main() -> None:
     args = ap.parse_args()
 
     device = "cuda:%d" % args.device
-    adapter = InternalFlatAdapter(args.arm, args.seed, args.ckpt, device=device)
+    from model import train_config as tc
+    cfg = tc.resolved_config(args.arm, args.seed)
+    if cfg.arm.backbone == "blt":
+        adapter = InternalBLTAdapter(args.arm, args.seed, args.ckpt, device=device)
+    else:
+        adapter = InternalFlatAdapter(args.arm, args.seed, args.ckpt, device=device)
     seqs = _seqs(SPLIT_8080, args.split, args.n)
     result = score_arm(adapter, seqs, args.split)
     result["run_id"] = adapter.cfg.run_id
