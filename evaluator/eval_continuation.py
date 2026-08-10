@@ -129,6 +129,9 @@ class ContinuationResult:
     def mean_nt_acc(self) -> float:
         return self.nt_acc_sum / self.count if self.count else float("nan")
 
+    def mean_kmer_recovery(self) -> float:
+        return self.kmer_rec_sum / self.count if self.count else float("nan")
+
 
 def evaluate_continuation(preds: Iterable[tuple[str, str, float]]) -> ContinuationResult:
     """preds = (generated_suffix, true_suffix, prefix_frac)."""

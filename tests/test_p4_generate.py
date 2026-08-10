@@ -92,3 +92,23 @@ def test_generate_cell_handles_invalid():
                                    target_len=16)
     assert len(valid) == 20
     assert invalid > 0
+
+
+def test_continuation_metrics_wired():
+    """evaluate_continuation computes edit_dist/nt_acc/kmer_recovery from
+    (generated_suffix, true_suffix) pairs (contract 3.6 continuation)."""
+    from evaluator.eval_continuation import evaluate_continuation
+    # exact match -> nt_acc 1.0, edit_dist 0, kmer_recovery 1.0
+    res = evaluate_continuation([("ACGUACGU", "ACGUACGU", 0.25)])
+    assert res.count == 1 and res.prefix_frac == 0.25
+    assert res.mean_edit_dist() == 0.0
+    assert res.mean_nt_acc() == 1.0
+    assert res.mean_kmer_recovery() == 1.0
+    # total mismatch -> nt_acc 0.0 (pred all U, ref ACGU: 1/4 positional match)
+    res2 = evaluate_continuation([("UUUU", "ACGU", 0.5)])
+    assert abs(res2.mean_nt_acc() - 0.25) < 1e-9
+    assert res2.mean_edit_dist() == 3.0
+    # empty -> NaN guarded
+    res3 = evaluate_continuation([])
+    assert res3.count == 0
+    assert res3.mean_nt_acc() != res3.mean_nt_acc()  # NaN

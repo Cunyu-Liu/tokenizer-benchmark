@@ -39,7 +39,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from evaluator.eval_continuation import (
-    evaluate_generation, _canon, ALPHABET,
+    evaluate_generation, evaluate_continuation, _canon, ALPHABET,
 )
 from evaluator.internal_adapter import InternalFlatAdapter
 
@@ -120,12 +120,15 @@ def main() -> None:
     all_rows = []          # one row per generated valid sequence
     cell_results = {}      # per-cell GenerationStats dict
     total_invalid = 0
+    cont_results = []      # (generated_suffix, true_suffix, prefix_frac)
 
     if args.prefix_frac is not None:
-        # Continuation: load sealed-test prefixes at the requested raw-nt frac.
+        # Continuation: load sealed-test (prefix, true suffix) pairs at the
+        # requested raw-nt frac. The true suffix is used for contact 3.6
+        # continuation metrics (edit_dist / nt_acc / kmer_recovery).
         import pyarrow.parquet as pql
         pf = pql.ParquetFile(SPLIT_8080)
-        prefixes = []
+        prefixes, true_seqs = [], []
         for batch in pf.iter_batches(batch_size=200_000,
                                      columns=["split_membership", "canonical_sequence"]):
             d = batch.to_pydict()
@@ -134,6 +137,7 @@ def main() -> None:
                     c = _canon(seq)
                     k = max(1, int(round(len(c) * args.prefix_frac)))
                     prefixes.append(c[:k])
+                    true_seqs.append(c)
                     if len(prefixes) >= GENERATION_SEEDS[0]:
                         break
             if len(prefixes) >= GENERATION_SEEDS[0]:
@@ -141,6 +145,7 @@ def main() -> None:
         # use the first N prefixes across the 5 generation seeds
         n_prefix = min(len(prefixes), VALID_PER_SEED)
         prefixes = prefixes[:n_prefix]
+        true_seqs = true_seqs[:n_prefix]
 
     for cell_name, dec in DECODER_GRID.items():
         temp, top_p = dec["temperature"], dec["top_p"]
@@ -148,14 +153,21 @@ def main() -> None:
         cell_invalid = 0
         for gs in GENERATION_SEEDS:
             if args.prefix_frac is not None:
-                # continuation: each gen_seed continues a distinct prefix set
+                # continuation: each gen_seed continues a distinct prefix set;
+                # compare the generated suffix against the true hidden suffix.
                 start = (gs // 100 - 1) * (VALID_PER_SEED // 5)
                 pre = prefixes[start:start + VALID_PER_SEED // 5]
-                for p in pre:
+                true_blk = true_seqs[start:start + VALID_PER_SEED // 5]
+                n_cont = 0
+                for p, tseq in zip(pre, true_blk):
+                    k = len(p)
                     suffix = adapter.generate(p, args.target_len, temperature=temp, top_p=top_p)
                     full = _canon(p) + _canon(suffix)
                     if _is_valid(full):
                         cell_seqs.append(full)
+                        ref_suffix = _canon(tseq)[k:]
+                        cont_results.append((_canon(suffix), ref_suffix, args.prefix_frac))
+                        n_cont += 1
                         all_rows.append({
                             "arm": args.arm, "seed": args.seed, "cell": cell_name,
                             "gen_seed": gs, "prefix_frac": args.prefix_frac,
@@ -185,10 +197,22 @@ def main() -> None:
             "n_invalid_char": st.invalid_char_count,
             "selection_sha256": _hash(cell_seqs),
         }
+        if args.prefix_frac is not None:
+            cres = evaluate_continuation(cont_results)
+            res["continuation"] = {
+                "prefix_frac": args.prefix_frac,
+                "n_total": cres.count,
+                "truncation_count": cres.truncation_count,
+                "mean_edit_dist": cres.mean_edit_dist(),
+                "mean_nt_acc": cres.mean_nt_acc(),
+                "mean_kmer_recovery": cres.mean_kmer_recovery(),
+            }
         cell_results[cell_name] = res
-        print("[%s/%s] %s temp=%s top_p=%s valid=%d unique=%d uniq=%.3f invalid=%d" % (
+        print("[%s/%s] %s temp=%s top_p=%s valid=%d unique=%d uniq=%.3f invalid=%d%s" % (
             args.arm, args.seed, cell_name, temp, top_p, st.valid,
-            len(st.exact_unique), st.uniqueness(), cell_invalid))
+            len(st.exact_unique), st.uniqueness(), cell_invalid,
+            (" cont=%d nt_acc=%.3f" % (cres.count, cres.mean_nt_acc())
+             if args.prefix_frac is not None else "")))
 
     # Persist parquet of all generated sequences
     table = pa.Table.from_pylist(all_rows)

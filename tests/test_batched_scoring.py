@@ -45,7 +45,10 @@ def test_batched_next_base_matches_per_position(tmp_path):
         perpos.append(a.log_prob_next_base(seq[:i], nxt))
     assert len(batch) == len(seq) == len(perpos)
     for b, p in zip(batch, perpos):
-        assert abs(b - p) < 1e-5, (b, p)
+        # batched path = single forward with causal masking; per-position path =
+        # forward over each prefix. Under bf16 autocast these differ by ~1e-4
+        # (bf16 has ~3 decimal digits), so use a bf16-appropriate tolerance.
+        assert abs(b - p) < 1e-3, (b, p)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
@@ -62,4 +65,5 @@ def test_batched_token_matches_per_position(tmp_path):
     perpos = [a.log_prob_token(ids[:i], ids[i]) for i in range(len(ids))]
     assert len(batch) == len(perpos)
     for b, p in zip(batch, perpos):
-        assert abs(b - p) < 1e-5, (b, p)
+        # bf16 tolerance (see next_base test above)
+        assert abs(b - p) < 1e-3, (b, p)
