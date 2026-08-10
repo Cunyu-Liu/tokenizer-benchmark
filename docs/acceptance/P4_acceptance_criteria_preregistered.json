@@ -3,7 +3,7 @@
   "document_type": "PREREGISTERED_ACCEPTANCE_CRITERIA",
   "status": "IN_PROGRESS_NOT_YET_ACCEPTED",
   "preregistered_utc": "2026-08-10T02:02:24Z",
-  "git_commit": null,
+  "git_commit": "63475e423b12befad4533d213d1d2584a52f568b",
   "contract_ref": "PLAN.md Phase 4 row (line 437) + contract 3.2/3.4/3.5/3.6/3.7, 5.4",
   "scope": "30 science runs (F1-F7 static track + P1-P3 BLT patch track) x seeds [17, 29, 43], each to 2.0B cumulative_valid_target_nt, validation-based checkpoint selection, frozen decoder, one-time sealed test, main likelihood/continuation/generation/efficiency tables.",
   "acceptance_criteria": [
