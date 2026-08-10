@@ -167,6 +167,15 @@ class InternalFlatAdapter(RNAARAdapter):
         if self.arm_type == "NUC":
             ids = self.tok.encode(canon)
             for _ in range(n):
+                if not ids:
+                    # Empty context (unconditional generation): uniform prior
+                    # over the alphabet at the leading position, consistent with
+                    # log_prob_token's empty-ctx convention (contract 3.5).
+                    k = len(ALPHABET)
+                    p = torch.full((k,), 1.0 / k, device=self.device)
+                    nxt = int(torch.multinomial(p, 1).item())
+                    ids = ids + [nxt]
+                    continue
                 logits = self._logits(ids)
                 lp = logits[0, -1] / max(temperature, 1e-6)
                 if top_p < 1.0:

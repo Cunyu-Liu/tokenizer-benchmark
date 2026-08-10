@@ -64,6 +64,10 @@ def test_gpu_adapter_forward(tmp_path):
     gen = adapter.generate("ACG", 4, temperature=1.0, top_p=1.0)
     assert len(gen) == 4 and all(c in "ACGU" for c in gen)
 
+    # unconditional generation (empty prefix) must not crash (contract 3.6)
+    gen0 = adapter.generate("", 4, temperature=1.0, top_p=1.0)
+    assert len(gen0) == 4 and all(c in "ACGU" for c in gen0)
+
     assert adapter.fallback("ACGU") == 0.0
     assert adapter.guard.cpu_fallback_count == 0
 
