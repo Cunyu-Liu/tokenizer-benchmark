@@ -32,13 +32,33 @@ def read_run(path: str) -> dict | None:
                 "log_lines": nlines}
     with open(mf) as fh:
         m = json.load(fh)
+
+    # Top-level summary fields (status, final_nt, best_val_loss, best_checkpoint)
+    # are only written when a run completes (status=DONE). While a run is in
+    # progress the manifest accumulates `checkpoints`/`validations` arrays
+    # incrementally at each validation; derive live progress from those so the
+    # monitor is useful during training (contract 5.5 low-frequency monitoring).
+    ckpts = m.get("checkpoints", [])
+    status = m.get("status")
+    if status is None and ckpts:
+        status = "RUNNING"
+    final_nt = m.get("final_nt")
+    if final_nt is None and ckpts:
+        final_nt = max(c["nt"] for c in ckpts)
+    best_val = m.get("best_val_loss")
+    best_ckpt = m.get("best_checkpoint")
+    if best_val is None and ckpts:
+        best = min(ckpts, key=lambda c: c.get("val_loss", float("inf")))
+        if "val_loss" in best:
+            best_val = best["val_loss"]
+            best_ckpt = best["path"]
     return {
         "dir": os.path.basename(path), "arm": m.get("arm"), "seed": m.get("seed"),
-        "run_id": m.get("run_id"), "status": m.get("status"),
-        "final_nt": m.get("final_nt"), "budget": m.get("config", {}).get("budget_nt"),
-        "best_val_loss": m.get("best_val_loss"),
-        "best_ckpt": os.path.basename(m["best_checkpoint"]) if m.get("best_checkpoint") else None,
-        "n_checkpoints": len(m.get("checkpoints", [])),
+        "run_id": m.get("run_id"), "status": status,
+        "final_nt": final_nt, "budget": m.get("config", {}).get("budget_nt"),
+        "best_val_loss": best_val,
+        "best_ckpt": os.path.basename(best_ckpt) if best_ckpt else None,
+        "n_checkpoints": len(ckpts),
         "final_loss": m.get("final_loss"),
         "throughput_nt_s": round(m.get("throughput_nt_s") or 0),
         "peak_vram_mb": round(m.get("peak_vram_mb") or 0),
