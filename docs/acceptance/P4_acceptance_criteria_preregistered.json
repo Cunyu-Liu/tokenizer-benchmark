@@ -1,0 +1,104 @@
+{
+  "phase": "Phase 4: 100M full matrix (10 arms x 3 seeds, 2.0B valid nt)",
+  "document_type": "PREREGISTERED_ACCEPTANCE_CRITERIA",
+  "status": "IN_PROGRESS_NOT_YET_ACCEPTED",
+  "preregistered_utc": "2026-08-10T02:02:24Z",
+  "git_commit": null,
+  "contract_ref": "PLAN.md Phase 4 row (line 437) + contract 3.2/3.4/3.5/3.6/3.7, 5.4",
+  "scope": "30 science runs (F1-F7 static track + P1-P3 BLT patch track) x seeds [17, 29, 43], each to 2.0B cumulative_valid_target_nt, validation-based checkpoint selection, frozen decoder, one-time sealed test, main likelihood/continuation/generation/efficiency tables.",
+  "acceptance_criteria": [
+    {
+      "criterion": "All 30 science runs complete to the 2.0B nt budget (or reach a documented configuration-level FAIL gate with evidence)",
+      "result": "PENDING",
+      "evidence_gate": "p4_finalize.py --runs /mnt/cunyuliu/tokenizer-benchmark/runs: every cell status==DONE with final_nt>=budget_nt, OR explicit FAIL_CLOSED_WITH_EVIDENCE per cell"
+    },
+    {
+      "criterion": "No silent seed swap: each run's arm/seed match the frozen 10x3 matrix",
+      "result": "PENDING",
+      "evidence_gate": "p4_finalize.validate_manifest: arm==config arm, seed==config seed for all 30 cells"
+    },
+    {
+      "criterion": "Every result traceable to a complete manifest (run_id, config, dataset/split hash, seed, GPU, params, exposure, checkpoint hash)",
+      "result": "PENDING",
+      "evidence_gate": "run_manifest.json per run with run_id, config.to_dict(), final_nt, best_checkpoint, params, cpu_fallback_count"
+    },
+    {
+      "criterion": "GPU-only execution enforced; no silent CPU fallback in training, validation, or evaluation",
+      "result": "PENDING",
+      "evidence_gate": "all manifests cpu_fallback_count==0; p4_eval/p4_generate assert fallback==0"
+    },
+    {
+      "criterion": "Validation-based checkpoint selection (best = lowest validation loss, never train loss / never test)",
+      "result": "PENDING",
+      "evidence_gate": "best_checkpoint chosen by min val_loss over checkpoints; test set never touched during selection"
+    },
+    {
+      "criterion": "Frozen decoder: generation uses the frozen pre-registered grid (conservative/balanced/exploratory) and frozen settings released before test",
+      "result": "PENDING",
+      "evidence_gate": "p4_generate.py DECODER_GRID + PRE_REGISTERED constants; grid frozen in git before sealed-test execution"
+    },
+    {
+      "criterion": "One-time sealed test: each arm/seed scored exactly once on the sealed test split (flat: full test; BLT: fixed homology-stratified subsample), metric per contract 3.5",
+      "result": "PENDING",
+      "evidence_gate": "p4_eval.py metric mapping (F1 next_base, F4/F5 overlap_path, F2/F3/F6/F7 canonical_path, P1-P3 next_base); BLT subsample manifest hash fixed"
+    },
+    {
+      "criterion": "Main likelihood/continuation/generation/efficiency tables produced (contract 3.7) with per-seed rows and seed means",
+      "result": "PENDING",
+      "evidence_gate": "p4_main_table.py output JSON + markdown; table A (internal controlled) per-arm means over available seeds"
+    },
+    {
+      "criterion": "Parameter/fairness census recorded for the 100M cohort (params within 2% tolerance, non-embedding matched within track)",
+      "result": "PENDING",
+      "evidence_gate": "run manifests params/non_embedding_params; cross-check against Phase 3 census"
+    }
+  ],
+  "locks_frozen_before_phase4": {
+    "lr_factor_selected": {
+      "F1": 2.0,
+      "F2": 2.0,
+      "F3": 2.0,
+      "F4": 2.0,
+      "F5": 2.0,
+      "F6": 2.0,
+      "F7": 2.0,
+      "P1": 2.0,
+      "P2": 2.0,
+      "P3": 1.0
+    },
+    "base_lr_100M": 0.0003,
+    "optimizer": {
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "weight_decay": 0.1,
+      "dtype": "bf16"
+    },
+    "context_nt": 4096,
+    "budget_nt_100M": 2000000000,
+    "batch_nt": 32768,
+    "seeds": [
+      17,
+      29,
+      43
+    ],
+    "tune_seed": 17
+  },
+  "evaluation_toolchain_ready": {
+    "flat_adapter": "evaluator/internal_adapter.py",
+    "blt_adapter": "evaluator/blt_adapter.py",
+    "likelihood": "p4_eval.py",
+    "subsample": "p4_subsample.py (blt_test_subsample.parquet, 5000 seqs/5000 clusters)",
+    "generation": "p4_generate.py",
+    "continuation": "evaluator/eval_continuation.py",
+    "main_table": "p4_main_table.py",
+    "run_aggregator": "p4_finalize.py",
+    "gpu_integration_test": "tests/test_p4_eval_blt_subsample.py (PASS on cuda:0)"
+  },
+  "failure_branches": [
+    "Any run with cpu_fallback_count>0 -> FAIL_CLOSED_WITH_EVIDENCE; rerun with GPU-only",
+    "Any run with seed slip -> FAIL; rerun with correct frozen seed",
+    "Any run not reaching budget within resource limits -> documented BLOCKED_RESOURCE, not silently downgraded to fewer seeds"
+  ]
+}
