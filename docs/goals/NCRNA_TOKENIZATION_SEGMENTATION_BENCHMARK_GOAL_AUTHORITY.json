@@ -1,25 +1,30 @@
 {
   "authority": {
-    "document": "NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md",
-    "version": "V1",
+    "document": "NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V2.md",
+    "version": "V2",
     "status": "ACTIVE",
+    "sha256": "ad2e9467a30c63081e5e265389b32b88d7087783ea139e6efd109e1fea75276b"
+  },
+  "supersedes": {
+    "version": "V1",
     "sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509"
   },
+  "amendment_log_ref": "NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V2.md (Amendment Log V1->V2)",
   "copies": {
-    "authoritative_server": "/home/cunyuliu/tokenizer-benchmark/docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md",
-    "local_mirror": "/Users/liucunyu/Documents/Codex/2026-08-08/volumes-orico-disc-blt-blt-code-2/outputs/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V1.md"
+    "authoritative_server": "/home/cunyuliu/tokenizer-benchmark/docs/goals/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V2.md",
+    "local_mirror": "/Users/liucunyu/Documents/Codex/2026-08-08/volumes-orico-disc-blt-blt-code-2/outputs/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V2.md"
   },
   "byte_identity_verified": {
-    "server_sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509",
-    "mirror_sha256": "9a145302b9a6aaf632cc17165a7b57165e3b1d7f8dfe0f8c9da115480786c509",
-    "identical": true
+    "server_sha256": "ad2e9467a30c63081e5e265389b32b88d7087783ea139e6efd109e1fea75276b",
+    "mirror_sha256": "PENDING_LOCAL_MIRROR_SYNC",
+    "identical": "PENDING"
   },
   "git": {
     "repo": "git@github.com:Cunyu-Liu/tokenizer-benchmark.git",
     "branch": "benchmark-v1",
-    "commit": "efc5536c84e46a46fd402106df85cf79b65c1fc7",
-    "remote_sha_rechecked": "efc5536c84e46a46fd402106df85cf79b65c1fc7"
+    "commit": "PENDING_AFTER_GOAL_V2_COMMIT",
+    "remote_sha_rechecked": "PENDING"
   },
   "mnt_root": "/mnt/cunyuliu/tokenizer-benchmark",
-  "revision_rule": "Amendment log entry or new Goal version required for any change to gates/science/thresholds (Goal §16)."
+  "revision_rule": "Amendment log entry or new Goal version required for any change to gates/science/thresholds (Goal V2 Amendment Log)."
 }
