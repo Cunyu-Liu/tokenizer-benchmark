@@ -25,6 +25,7 @@ from .dataset import (
 from .entropy_predictor import (
     EntropyCalib, EntropyPatchPolicy, EntropyPredictor, calibrate_entropy,
 )
+from .conditional_patch import ConditionalRandomPatchPolicy
 from .patch import PatchPolicy
 
 
@@ -48,13 +49,14 @@ def build_model_for_cfg(cfg, device: str):
 
 
 def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
-                          device: str = "cuda:0") -> PatchPolicy | EntropyPatchPolicy | None:
+                          device: str = "cuda:0",
+                          p2_policy=None) -> PatchPolicy | EntropyPatchPolicy | None:
     """Return the boundary policy for a BLT arm.
 
-    P1/P2 derive fixed length / random length distribution from the train-only
-    entropy calibration (contract 3.2). P3 uses the fitted entropy predictor +
-    calibrated gate. Falls back to a fixed default when no calibration given
-    (used only by smoke tests, not scientific runs).
+    P1 derives fixed length from the train-only entropy calibration; P2 uses
+    the fitted supported-strata conditional random patch (contract 3.2) when a
+    fitted policy is supplied, falling back to the distribution-matched random
+    for dev-only smoke tests; P3 uses the fitted entropy predictor + gate.
     """
     if cfg.arm.backbone != "blt":
         return None
@@ -63,6 +65,9 @@ def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
         plen = int(round(calib.mean_patch_len)) if calib else 8
         return PatchPolicy(kind="fixed", patch_len=max(1, plen))
     if t == "random_patch":
+        if p2_policy is not None:
+            # Contract 3.2: supported-strata conditional random patch.
+            return p2_policy
         dist = list(calib.length_dist) if calib else [0.125] * 8
         return PatchPolicy(kind="random", seed=cfg.seed, length_dist=dist)
     if t == "entropy_patch":
@@ -83,7 +88,7 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
           checkpoint_dir=None, start_seed=0, calib: EntropyCalib | None = None,
           budget_nt: int | None = None, lr: float | None = None,
           peak_mem: bool = False, batch_nt: int | None = None,
-          return_model: bool = False):
+          return_model: bool = False, p2_policy=None):
     """Run one full training budget. Checkpoints by valid target nt.
 
     `budget_nt`/`lr` optionally override the frozen config (used by smoke,
@@ -92,8 +97,14 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
     guard = GPUGuard(device)
     guard.check()
     model = build_model_for_cfg(cfg, device)
-    policy = _patch_policy_for_arm(cfg, calib=calib, device=device)
+    policy = _patch_policy_for_arm(cfg, calib=calib, device=device,
+                                   p2_policy=p2_policy)
     param_count = count_params(model)
+    # P3 entropy AND P2 conditional-random compute boundaries on GPU from the
+    # nt batch (they need per-position causal entropy); the dataset must not
+    # emit a per-sequence boundary for these arms.
+    gpu_policy = policy if isinstance(
+        policy, (EntropyPatchPolicy, ConditionalRandomPatchPolicy)) else None
     entropy_policy = policy if isinstance(policy, EntropyPatchPolicy) else None
 
     opt = torch.optim.AdamW(
@@ -117,9 +128,9 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
         progress = min(1.0, (nt - warmup) / max(1, budget - warmup))
         return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
-    # For P3 entropy, boundaries are computed on GPU from the nt batch; the
-    # dataset does not emit a per-sequence boundary.
-    dataset_policy = None if entropy_policy is not None else policy
+    # For P3 entropy and P2 conditional-random, boundaries are computed on GPU
+    # from the nt batch; the dataset does not emit a per-sequence boundary.
+    dataset_policy = None if gpu_policy is not None else policy
     batch_nt = batch_nt if batch_nt is not None else (
         getattr(cfg, "batch_nt", None) or (batch_size * cfg.context_nt))
     gen = iter_train_batches(
@@ -138,8 +149,8 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
         model.train()
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             if cfg.arm.backbone == "blt":
-                if entropy_policy is not None:
-                    bnd = entropy_policy.boundaries_batch(tok)
+                if gpu_policy is not None:
+                    bnd = gpu_policy.boundaries_batch(tok)
                 else:
                     bnd = _tensor(batch, device, "boundary").float()
                 logits, loss = model(tok, bnd, targets=tgt)
@@ -194,7 +205,8 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
 def validate_on_split(cfg, model, data_path, device="cuda:0",
                       calib: EntropyCalib | None = None,
                       split: str = "validation", val_nt: int = 2_000_000,
-                      batch_nt: int = 8192, seed: int = 0) -> dict:
+                      batch_nt: int = 8192, seed: int = 0,
+                      p2_policy=None) -> dict:
     """Evaluation of a trained model on a held-out split (contract 3.4).
 
     Streams the given split (default validation) once, computes a cumulative
@@ -204,9 +216,11 @@ def validate_on_split(cfg, model, data_path, device="cuda:0",
     """
     guard = GPUGuard(device)
     guard.check()
-    policy = _patch_policy_for_arm(cfg, calib=calib, device=device)
-    entropy_policy = policy if isinstance(policy, EntropyPatchPolicy) else None
-    dataset_policy = None if entropy_policy is not None else policy
+    policy = _patch_policy_for_arm(cfg, calib=calib, device=device,
+                                   p2_policy=p2_policy)
+    gpu_policy = policy if isinstance(
+        policy, (EntropyPatchPolicy, ConditionalRandomPatchPolicy)) else None
+    dataset_policy = None if gpu_policy is not None else policy
     model.eval()
 
     gen = iter_train_batches(
@@ -221,8 +235,8 @@ def validate_on_split(cfg, model, data_path, device="cuda:0",
             tok = _tensor(batch, device, "token_ids")
             tgt = _tensor(batch, device, "targets")
             if cfg.arm.backbone == "blt":
-                if entropy_policy is not None:
-                    bnd = entropy_policy.boundaries_batch(tok)
+                if gpu_policy is not None:
+                    bnd = gpu_policy.boundaries_batch(tok)
                 else:
                     bnd = _tensor(batch, device, "boundary").float()
                 logits, loss = model(tok, bnd, targets=tgt)
