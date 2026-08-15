@@ -81,7 +81,18 @@ class NUCTokenizer(TokenizerBase):
 
 
 class KmerTokenizer(TokenizerBase):
-    """overlapping (stride=1) or non-overlapping (stride=k) k-mer."""
+    """overlapping (stride=1) or non-overlapping (stride=k) k-mer.
+
+    Contract 3.6 canonical tail-token rule for non-overlapping k-mer:
+      - Full k-mer blocks cover the leading floor(L/k)*k nucleotides.
+      - The trailing 1..k-1 nucleotides (if any) are encoded by a single
+        frozen canonical tail token whose string IS the remaining bases
+        (a short mer of length 1..k-1). The vocab therefore extends the
+        4^k full mers with all short mers of length 1..k-1.
+      - Lossless: decode concatenates full-mer strings + the tail string,
+        reconstructing the original sequence byte-identically. No bases are
+        discarded, no padding is scored, no base is double-counted.
+    """
 
     def __init__(self, k: int, overlapping: bool, special_tokens: Optional[dict] = None):
         super().__init__(special_tokens)
@@ -89,8 +100,19 @@ class KmerTokenizer(TokenizerBase):
         self._overlapping = overlapping
         self.stride = 1 if overlapping else k
         self.offset = 0
-        self._id_to_mer = ["".join(p) for p in __import__("itertools").product(ALPHABET, repeat=k)]
+        import itertools
+        self._full_mers = ["".join(p) for p in itertools.product(ALPHABET, repeat=k)]
+        if overlapping:
+            self._id_to_mer = self._full_mers
+        else:
+            # canonical tail tokens: all short mers of length 1..k-1, ordered
+            # by (length, lexicographic) so the mapping is frozen & deterministic.
+            tail = []
+            for L in range(1, k):
+                tail += ["".join(p) for p in itertools.product(ALPHABET, repeat=L)]
+            self._id_to_mer = self._full_mers + tail
         self._mer_to_id = {m: i for i, m in enumerate(self._id_to_mer)}
+        self._tail_offset = 4 ** k  # first tail-token id
         self.type = f"overlap_mer" if overlapping else f"nonoverlap_mer"
 
     def encode(self, seq: str) -> list[int]:
@@ -106,8 +128,14 @@ class KmerTokenizer(TokenizerBase):
             for i in range(1, len(c) - self.k + 1):
                 ids.append(self._mer_to_id[c[i:i + self.k]])
         else:
-            for i in range(0, len(c) - self.k + 1, self.k):
+            # full k-mer blocks, then a single canonical tail token (1..k-1 nt)
+            i = 0
+            n = len(c)
+            while i + self.k <= n:
                 ids.append(self._mer_to_id[c[i:i + self.k]])
+                i += self.k
+            if i < n:
+                ids.append(self._mer_to_id[c[i:]])  # tail: length 1..k-1
         return ids
 
     def decode(self, ids: list[int]) -> str:
@@ -123,7 +151,9 @@ class KmerTokenizer(TokenizerBase):
         return "".join(self._id_to_mer[i] for i in ids)
 
     def vocab_size(self) -> int:
-        return 4 ** self.k
+        if self._overlapping:
+            return 4 ** self.k
+        return 4 ** self.k + sum(4 ** L for L in range(1, self.k))
 
 
 class BPETokenizer(TokenizerBase):

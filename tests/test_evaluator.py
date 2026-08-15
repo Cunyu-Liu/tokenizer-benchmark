@@ -40,6 +40,57 @@ def test_nonoverlap_mer_roundtrip():
     assert t.decode(t.encode(s)) == s
 
 
+def test_nonoverlap_mer_tail_lossless():
+    """Contract 3.6: non-overlap k-mer must not discard trailing 1..k-1 bases.
+
+    The canonical tail token encodes the remaining bases; round-trip must be
+    byte-identical for ANY length, and no nucleotide may be dropped or padded.
+    """
+    for k in (3, 6):
+        t = KmerTokenizer(k, overlapping=False)
+        # lengths covering all tail residues 0..k-1
+        for L in range(1, 2 * k + 2):
+            s = ("ACGU" * (L // 4 + 1))[:L]
+            enc = t.encode(s)
+            assert t.decode(enc) == s, f"k={k} L={L}"
+            # every nucleotide is covered exactly once
+            assert len(t.decode(enc)) == L, f"k={k} L={L} len mismatch"
+        # real-world length samples
+        for L in (10, 14, 100, 652, 2228, 4096):
+            s = ("ACGU" * (L // 4 + 1))[:L]
+            assert t.round_trip(s), f"k={k} L={L}"
+        # homopolymers
+        for base in "ACGU":
+            for L in (1, 2, 5, 100):
+                s = base * L
+                assert t.round_trip(s), f"k={k} homo {base} L={L}"
+
+
+def test_nonoverlap_mer_tail_vocab():
+    """Canonical tail tokens live in the vocab after the full k-mers."""
+    t3 = KmerTokenizer(3, overlapping=False)
+    assert t3.vocab_size() == 4 ** 3 + 4 + 4 ** 2  # full 3-mers + 1-mers + 2-mers
+    t6 = KmerTokenizer(6, overlapping=False)
+    assert t6.vocab_size() == 4 ** 6 + sum(4 ** L for L in range(1, 6))
+    # a 2-nt tail is a real token id >= 4^k
+    s = "ACGUACG"  # 7 nt, k=3 -> tail "G" is a 1-mer
+    enc = t3.encode(s)
+    assert len(enc) == 3  # 2 full 3-mers + 1 tail token
+    assert t3.decode(enc) == s
+    assert enc[-1] >= 4 ** 3  # tail token id in the tail region
+
+
+def test_overlap_mer_each_step_one_nt():
+    """Overlap k-mer: each step adds exactly one new nucleotide (contract 3.6)."""
+    for k in (3, 6):
+        t = KmerTokenizer(k, overlapping=True)
+        s = "ACGUACGUACGUACGU"  # len 16
+        enc = t.encode(s)
+        # t_0 covers k nt, each subsequent token adds 1 nt
+        assert len(enc) == len(s) - k + 1, f"k={k} tokens={len(enc)}"
+        assert t.decode(enc) == s
+
+
 def test_bpe_roundtrip():
     t = BPETokenizer(vocab_size=32)
     t.fit(["ACGUACGUACGU", "ACGUUUGCA", "CCCGGGAAA"])

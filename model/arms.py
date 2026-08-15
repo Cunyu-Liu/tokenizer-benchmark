@@ -32,8 +32,11 @@ ARMS_100M: list[ArmSpec] = [
     ArmSpec("F3", "flat", "Unigram", 1024, None, None, "exclude BPE-merge-only gain"),
     ArmSpec("F4", "flat", "overlap_mer", 4 ** 3, 3, 1, "GARNET-style local"),
     ArmSpec("F5", "flat", "overlap_mer", 4 ** 6, 6, 1, "BEACON 6-mer"),
-    ArmSpec("F6", "flat", "nonoverlap_mer", 4 ** 3, 3, 3, "overlap vs block"),
-    ArmSpec("F7", "flat", "nonoverlap_mer", 4 ** 6, 6, 6, "k/stride sensitivity"),
+    # F6/F7 non-overlap k-mer: vocab = full k-mers + canonical tail tokens
+    # (all short mers of length 1..k-1) so no trailing bases are discarded
+    # (contract 3.6 canonical tail-token rule, lossless round-trip).
+    ArmSpec("F6", "flat", "nonoverlap_mer", 4 ** 3 + 4 + 16, 3, 3, "overlap vs block"),
+    ArmSpec("F7", "flat", "nonoverlap_mer", 4 ** 6 + 4 + 16 + 64 + 256 + 1024, 6, 6, "k/stride sensitivity"),
     ArmSpec("P1", "blt", "fixed_patch", 4, None, None, "fixed-length patch"),
     ArmSpec("P2", "blt", "random_patch", 4, None, None, "length-matched random patch"),
     ArmSpec("P3", "blt", "entropy_patch", 4, None, None, "causal entropy patch"),
