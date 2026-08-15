@@ -31,12 +31,15 @@ from model.train import (
 from model.census import GPUGuard, count_params
 from model.dataset import count_valid_nt, iter_train_batches
 from model.entropy_predictor import EntropyCalib, calibrate_entropy
+from model.conditional_patch import fit_p2_q, ConditionalRandomPatchPolicy
 
 SPLIT_8080 = "/mnt/cunyuliu/tokenizer-benchmark/data/derived/split/release22_split_8080.parquet"
 # Phase 4 defaults
 VALIDATION_NT = 4_000_000      # nt budget for each validation eval
 VAL_INTERVAL_NT = 100_000_000  # validate every 100M valid nt (20/run at 2B)
 ENTROPY_BUDGET_NT = 2_000_000  # train-only entropy calibration budget (BLT arms)
+# P2 supported-strata conditional-random q-fit sample size (train-only, frozen).
+P2_QFIT_N_SEQS = 2000
 
 
 def _device(dev) -> str:
@@ -73,10 +76,28 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
     os.makedirs(out_dir, exist_ok=True)
 
     calib = entropy_calib_for_arm(arm_id, device)
+    # P2: fit the supported-strata conditional-random q on train-only data
+    # (contract 3.2); the fitted policy is shared by all three P2 model seeds
+    # via the frozen fit rule, and is persisted with each checkpoint.
+    p2_policy = None
+    p2_coverage = None
+    if arm_id == "P2" and calib is not None:
+        p2_policy, p2_coverage = fit_p2_q(
+            calib, SPLIT_8080, device=device, n_seqs=P2_QFIT_N_SEQS, seed=17)
+        print("[P2 qfit] supported coverage: pos=%.3f bnd=%.3f pass=%s" % (
+            p2_coverage.get("position_coverage", float("nan")),
+            p2_coverage.get("boundary_coverage", float("nan")),
+            p2_coverage.get("passes_support_coverage", False)), flush=True)
     model = build_model_for_cfg(cfg, device)
-    policy = _patch_policy_for_arm(cfg, calib=calib, device=device)
-    entropy_policy = policy if (policy is not None and policy.__class__.__name__ == "EntropyPatchPolicy") else None
-    dataset_policy = None if entropy_policy is not None else policy
+    policy = _patch_policy_for_arm(cfg, calib=calib, device=device,
+                                   p2_policy=p2_policy)
+    # P3 entropy AND P2 conditional-random compute boundaries on GPU from the
+    # nt batch (they need per-position causal entropy).
+    gpu_policy = policy if isinstance(
+        policy, (ConditionalRandomPatchPolicy,
+                 __import__("model.entropy_predictor", fromlist=["EntropyPatchPolicy"]).EntropyPatchPolicy)
+    ) else None
+    dataset_policy = None if gpu_policy is not None else policy
     param_count = count_params(model)
 
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.optim.lr,
@@ -124,8 +145,8 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
         model.train()
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             if cfg.arm.backbone == "blt":
-                if entropy_policy is not None:
-                    bnd = entropy_policy.boundaries_batch(tok)
+                if gpu_policy is not None:
+                    bnd = gpu_policy.boundaries_batch(tok)
                 else:
                     bnd = _tensor(batch, device, "boundary").float()
                 logits, loss = model(tok, bnd, targets=tgt)
@@ -147,7 +168,8 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
             last_val_nt = cumulative_nt
             v = validate_on_split(cfg, model, SPLIT_8080, device=device,
                                   calib=calib, split="validation",
-                                  val_nt=VALIDATION_NT, batch_nt=batch_nt)
+                                  val_nt=VALIDATION_NT, batch_nt=batch_nt,
+                                  p2_policy=p2_policy)
             assert v["cpu_fallback_count"] == 0, "cpu fallback in val %s" % arm_id
             val_entry = {"nt": cumulative_nt, "step": step, "val_loss": v["val_loss"],
                          "val_nt": v["val_nt"], "val_batches": v["val_batches"]}
@@ -167,6 +189,16 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
                     "mean_patch_len": calib.mean_patch_len,
                     "length_dist": calib.length_dist,
                     "checkpoint_hash": calib.checkpoint_hash,
+                }
+            if p2_policy is not None:
+                # Persist P2's frozen conditional-random q + bin edges so eval
+                # replays the exact same supported-strata random boundaries.
+                payload["p2_q"] = {
+                    "q_table": p2_policy.q_table,
+                    "prefix_edges": p2_policy.prefix_edges,
+                    "ent_edges": p2_policy.ent_edges,
+                    "seed": p2_policy.seed,
+                    "coverage_report": p2_policy.coverage_report,
                 }
             torch.save(payload, ck_path)
             manifest["checkpoints"].append({"nt": cumulative_nt, "step": step,
@@ -197,6 +229,7 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
         "wall_seconds": time.time() - t0,
         "cpu_fallback_count": guard.cpu_fallback_count,
         "calib_persisted": calib is not None,
+        "p2_qfit_coverage": p2_coverage,
         "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "status": "DONE",
     })
