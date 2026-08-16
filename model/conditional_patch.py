@@ -59,11 +59,11 @@ class ConditionalRandomPatchPolicy:
     q_table: list[list[float]] | None = None
     n_prefix_bins: int = N_PREFIX_LEN_BINS
     n_entropy_bins: int = N_ENTROPY_BINS
-    entropy_predictor = None          # frozen train-only GRU predictor
+    entropy_predictor: object = None   # frozen train-only GRU predictor
     device: str = "cuda:0"
     ent_edges: list[float] | None = None
     prefix_edges: list[int] | None = None
-    p3_boundary: Callable[[str, int], list[int]] | None = None  # exact P3 replay
+    p3_boundary: object = None         # exact P3 replay (str,length)->list[int]
     coverage_report: dict | None = None
 
     # -- binning ------------------------------------------------------------
@@ -74,8 +74,8 @@ class ConditionalRandomPatchPolicy:
         i = max(edges[0], min(i, edges[-1] - 1))
         for b in range(len(edges) - 1):
             if edges[b] <= i < edges[b + 1]:
-                return b
-        return len(edges) - 2
+                return min(b, self.n_prefix_bins - 1)
+        return min(len(edges) - 2, self.n_prefix_bins - 1)
 
     def _entropy_bin(self, ent: float) -> int:
         edges = self.ent_edges
@@ -84,8 +84,8 @@ class ConditionalRandomPatchPolicy:
         ent = max(edges[0], min(ent, edges[-1] - 1e-12))
         for b in range(len(edges) - 1):
             if edges[b] <= ent < edges[b + 1]:
-                return b
-        return len(edges) - 2
+                return min(b, self.n_entropy_bins - 1)
+        return min(len(edges) - 2, self.n_entropy_bins - 1)
 
     # -- batched causal entropy (one GRU forward per sequence) ---------------
     def _batch_entropy(self, canon: str) -> np.ndarray:

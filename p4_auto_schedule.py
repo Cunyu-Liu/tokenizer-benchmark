@@ -93,9 +93,42 @@ def gpu_table() -> list[dict]:
     return result
 
 
+def _our_gpu_pids() -> dict:
+    """Map physical GPU index -> set of our p4_train pids (via CUDA_VISIBLE_DEVICES)."""
+    import re as _re
+    gpu_of_pid = {}
+    try:
+        out = subprocess.run(
+            ["ps", "-eo", "pid,args="], capture_output=True, text=True, check=True).stdout
+        for line in out.splitlines():
+            m = _re.match(r"\s*(\d+)\s+(.*p4_train\.py.*)", line)
+            if not m:
+                continue
+            pid = m.group(1)
+            args = m.group(2)
+            # CUDA_VISIBLE_DEVICES=<gpu> prefix in the bash -lc wrapper
+            mm = _re.search(r"CUDA_VISIBLE_DEVICES=(\d+)", args)
+            if mm:
+                gpu_of_pid.setdefault(int(mm.group(1)), set()).add(pid)
+    except Exception:
+        pass
+    return gpu_of_pid
+
+
 def free_gpus() -> list[dict]:
+    """Full, non-MIG GPUs with enough free memory for a 100M run.
+
+    Decision rule (2026-08-16, owner-approved: keep legacy mRNA_editflow
+    processes running): a GPU is usable if it is non-MIG, has
+    >= FREE_MIN_MiB free memory, and is NOT already hosting one of our
+    p4_train training processes (no double-booking). Legacy non-benchmark
+    processes occupy a few GiB on some cards but leave ample free memory.
+    """
+    our_gpus = _our_gpu_pids()
     cands = [g for g in gpu_table()
-             if not g["mig"] and not g["occupied"] and g["free"] >= FREE_MIN_MiB]
+             if not g["mig"]
+             and g["free"] >= FREE_MIN_MiB
+             and not our_gpus.get(g["index"])]
     return sorted(cands, key=lambda g: (g["index"] == 0, -g["free"]))
 
 
