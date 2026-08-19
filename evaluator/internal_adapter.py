@@ -117,6 +117,24 @@ class InternalFlatAdapter(RNAARAdapter):
             out[i] = float(lp[i - 1, ids[i]].item())
         return out
 
+    def all_log_probs_full(self, ids: list[int]) -> list[list[float]]:
+        """Full (T, vocab) log-probs over the canonical token path.
+
+        Position 0 uses a uniform prior (no BOS, matching all_log_probs_token);
+        positions 1..T-1 use the model's full-vocabulary log_softmax. Returned
+        as a list of length-T vocab-sized lists so the canonical codec can
+        quantize each position's full distribution (contract 3.6).
+        """
+        n = len(ids)
+        uniform = -math.log(float(self.vocab))
+        rows = [[uniform] * self.vocab for _ in range(n)]
+        if n <= 1:
+            return rows
+        lp = F.log_softmax(self._logits(ids)[0], dim=-1)  # (T, vocab)
+        for i in range(1, n):
+            rows[i] = [float(lp[i - 1, v].item()) for v in range(self.vocab)]
+        return rows
+
     # --- scoring callbacks (RNAARAdapter contract) ---
     def log_prob_token(self, ctx: list[int], token_id: int) -> float:
         """log p(token_id | ctx) for the canonical token path."""
