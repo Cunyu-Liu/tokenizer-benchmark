@@ -1,0 +1,42 @@
+{
+  "registration": "Track L / BIO-DIAG dynamic variable-length control registration",
+  "date": "2026-08-19",
+  "authority": "Goal V3 §1.6 / §3.2.2 (SHA 4db36d6d)",
+  "purpose": "Register the two dynamic variable-length control extensions required by Goal V3. Neither is promoted into the 33-run CORE_PAPER_SCOPE; both are documented so their evidence boundary is explicit.",
+  "track_L": {
+    "id": "L1_LEARNED_DYNAMIC_CHUNKING",
+    "status": "PILOT_ONLY_NOT_IN_CORE_51",
+    "reference_works": ["H-Net", "DNAChunker", "MergeDNA", "GBST"],
+    "scope": "learned causal dynamic chunking system reference (router / differentiable merging / differentiable token merging); a complete-system comparison, NOT part of the P1-P3 controlled patch-rule estimand",
+    "phase_3_limits": [
+      "train/validation and tuning_seed=101 only",
+      "one development pilot, not three formal seeds"
+    ],
+    "promotion_gates": [
+      "boundary/merge decision depends only on current + historical prefix; suffix perturbation must not change observed-prefix chunk boundaries or next-step logits",
+      "source RNA recoverable losslessly via frozen encoder/decoder",
+      "mean patch length / patch count / max-cap rule freezable and auditable against P1-P3 budget",
+      "boundary/router params, training FLOPs, online inference FLOPs and latency reported separately; total params within 2% OR explicitly a complete-system reference",
+      "three independent training repetitions feasible on resources",
+      "final_test_access_count == 0",
+      "owner signs a prospective amendment specifying added run count and permitted claims"
+    ],
+    "if_not_promoted": "REFERENCE_ONLY or future work; never mixed into P1-P3 controlled patch-rule contrasts",
+    "comparison_family_if_formal": "LEARNED_DYNAMIC_SYSTEM (separate; not R_FLAT/R_BLT)"
+  },
+  "bio_diag": {
+    "id": "BIO_DIAG_BIOLOGICAL_PRIOR_PATCHING",
+    "status": "ORACLE_DIAGNOSTIC_ONLY",
+    "signals": ["covariance-model information content", "alignment conservation", "pairing/structure confidence"],
+    "scope": "conservation / covariation / structure-guided patching on the Rfam-alignable annotated subset only",
+    "constraints": [
+      "annotation coverage reported",
+      "family leakage risk reported",
+      "whether it needs future/whole-sequence info reported (prefix-causality consequence)",
+      "extra compute + non-deployable conditions reported"
+    ],
+    "evidence_boundary": "diagnostic upper bound on whether biological priors could change boundary placement; NOT in broad primary ranking",
+    "if_promoted_later": "requires train-only, family-held-out, prefix-causal boundary signal + independent re-preregistration (no silent promotion)"
+  },
+  "effect_on_core": "NEITHER_BLOCKS_CORE_33"
+}

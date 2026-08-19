@@ -1,0 +1,99 @@
+{
+  "audit": "V3 reviewer-revision gap audit",
+  "date": "2026-08-19",
+  "authority_before": "Goal V2 (SHA ad2e9467a30c63081e5e265389b32b88d7087783ea139e6efd109e1fea75276b)",
+  "authority_after": "Goal V3 (SHA 4db36d6db023aa1d333c67f912ef54ea1628e3627e7696c6a6c8bd0e256b6147)",
+  "summary": "Goal V3 closes 8 review issues and adds dynamic variable-length controls + BiomBenchmark-inspired design. Audit maps each change to current implementation coverage and lists open gaps to be closed in order.",
+  "revision_map": [
+    {
+      "review_issue": "1. narrow novelty",
+      "contract": "1.2 / Phase 0",
+      "required": "collision matrix covering H-Net, DNAChunker, MergeDNA, PatchDNA (biorxiv v1), BiomBenchmark + latest genomic tokenizer benchmark; block 'first' claims",
+      "current": "claims/claim_evidence_matrix.json v0.3.0 (5 entries, novelty_narrow cites Goal V1); no per-work field-level collision matrix",
+      "status": "GAP_OPEN",
+      "next_action": "Phase 0-E: write collision matrix v2 with per-work task/data/split/backbone/budget/patch/metrics/status fields"
+    },
+    {
+      "review_issue": "2. generation positioning / BPN mismatch",
+      "contract": "1.1/1.5/2.3/3.7",
+      "required": "true-suffix continuation code length (canonical_code_length_BPN over the true suffix) is required main-text secondary; unconditional generation demoted to exploratory",
+      "current": "evaluator/eval_continuation.py implements edit_distance/nucleotide_accuracy/kmer_recovery diagnostics only; no true-suffix conditional code-length endpoint",
+      "status": "GAP_OPEN",
+      "next_action": "Phase 2: add true-suffix continuation code-length evaluator on shared raw-prefix cut points (10/25/50%)"
+    },
+    {
+      "review_issue": "3. project scope",
+      "contract": "1.4/3.2.1/3.5/5.3",
+      "required": "CORE_PAPER_SCOPE = 33 runs (Track R 30 + B1 3); Track D/350M conditional; B1 = BLT patch-size=1",
+      "current": "Track R 10x3 implemented; B1 arm NOT in model/arms.py (only F1-F7, P1-P3, C1-C4); no B1 training path",
+      "status": "GAP_OPEN",
+      "next_action": "Phase 3/4: add B1 (BLT patch-size=1) arm + 3 seeds; this is a core 33-run requirement"
+    },
+    {
+      "review_issue": "4. atlas complexity",
+      "contract": "1.5/3.9",
+      "required": "main text = layered effect + Pareto + abstention-capable Decision Map (WINNER/TRADE_OFF_SET/NO_RESOLVED_WINNER/INSUFFICIENT_SUPPORT); full selector demoted to supplementary",
+      "current": "V2 carried 'atlas_selector' terminology; no decision_map.yaml yet (Phase 7 artifact)",
+      "status": "DEFER_TO_PHASE7",
+      "next_action": "Phase 7: produce decision_map.yaml + margin_justification.md"
+    },
+    {
+      "review_issue": "5. weak biological evidence",
+      "contract": "3.1/3.7/5.2",
+      "required": "length x GC x RNA-type matched views, CM-hit x nearest-train identity cross-tab, non-rRNA/tRNA sensitivity, rare-family slice, RNAGym diagnostic",
+      "current": "generation/continuation diagnostics partial (identity/edit/kmer); no matched-biological views yet",
+      "status": "DEFER_TO_PHASE7",
+      "next_action": "Phase 7 evaluator: implement matched views + CM x nearest-neighbor + RNAGym"
+    },
+    {
+      "review_issue": "6. BPN semantics",
+      "contract": "3.6",
+      "required": "uniform(2 bits/nt)/order-0..3 Markov/CTW|PPM calibration baselines + storage/build-cost reporting",
+      "current": "evaluator/codec.py implements canonical_code_length_BPN + canonical_code_nll_BPN + consistency gates, but NO uniform/Markov/CTW/PPM calibration baselines",
+      "status": "GAP_OPEN",
+      "next_action": "Phase 2: add compression baselines module (uniform 2 bits/nt, order-k Markov train-fit, CTW or PPM)"
+    },
+    {
+      "review_issue": "7. causal/universality wording",
+      "contract": "2.2/3.2/3.9",
+      "required": "controlled patch-rule effect / randomized boundary-rule intervention / complete-system effect; restrict to Flat+BLT",
+      "current": "wording-only change; landed with Goal V3 body",
+      "status": "CLOSED_BY_V3_TEXT"
+    },
+    {
+      "review_issue": "8. data release version",
+      "contract": "1.4/3.1/Phase 1",
+      "required": "release-22 anchor unchanged; release 23-27 shift; release-27 composition audit (source x RNA_type x length, ~10M new sequences incl. circRNA/mirtron)",
+      "current": "docs/data/P1_data_acquisition.json temporal_ood = 23..26; note says release-27 needs owner discussion / Goal amendment",
+      "status": "GAP_OPEN",
+      "next_action": "Phase 1: download release 27 + exact/80-80 overlap removal + composition audit (needs owner disk approval)"
+    },
+    {
+      "review_issue": "dynamic variable-length controls",
+      "contract": "1.6/3.2.2",
+      "required": "Track L (learned causal dynamic chunking, PILOT_ONLY_NOT_IN_CORE_51) + BIO-DIAG (conservation/structure-guided patching, oracle/diagnostic) registered; neither blocks core",
+      "current": "no registration doc",
+      "status": "GAP_OPEN_DOC_ONLY",
+      "next_action": "Phase 3: register Track L / BIO-DIAG status as REFERENCE_ONLY/diagnostic (documentation)"
+    },
+    {
+      "review_issue": "BiomBenchmark-inspired design",
+      "contract": "1.7/3.5/3.8",
+      "required": "scenario matrix, MethodProfileCard, simple baselines, low-resource/efficiency stress, unified RNAARAdapter/result parser, time-to-quality",
+      "current": "evaluator/adapter.py + RNAARAdapter concept present; MethodProfileCard + result parser auto-generation partial",
+      "status": "PARTIAL_DEFER",
+      "next_action": "Phase 3/7: MethodProfileCard + result parser completeness; time-to-quality in Phase 4/5"
+    }
+  ],
+  "phase4_note": "Track R training in progress (9 concurrent via owner-approved GPU1/2/4 stacking deviation). This deviation is NOT part of Goal V3 Appendix B (which caps 100M at 2 exclusive GPU jobs). Flagged for owner to reaffirm or rescind under V3.",
+  "open_gaps_ordered": [
+    "Phase 0-E collision matrix v2",
+    "Phase 1 release-27 shift (disk/owner approval)",
+    "Phase 2 BPN compression baselines (uniform/Markov/CTW/PPM)",
+    "Phase 2 true-suffix continuation code-length endpoint",
+    "Phase 3 B1 arm (BLT patch-size=1) + Track L/BIO-DIAG registration",
+    "Phase 4 B1 3 runs + Track R 30 closure (33 core runs)",
+    "Phase 4-G margin_justification + scope gate",
+    "Phase 7 Decision Map simplification + biological controls"
+  ]
+}

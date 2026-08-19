@@ -1,0 +1,149 @@
+{
+  "collision_matrix": "TokBench-RNA updated collision matrix v2",
+  "date": "2026-08-19",
+  "authority": "Goal V3 §1.2 (SHA 4db36d6d)",
+  "retrieval": {
+    "date": "2026-08-19",
+    "note": "Per-work fields sourced from Goal V3 §1.2 list plus a targeted web re-check of H-Net/DNAChunker/MergeDNA on 2026-08-19. Fields not confirmed by the contract or a primary source are marked UNKNOWN_VERIFY, never fabricated."
+  },
+  "fields": [
+    "task", "training_objective", "data", "homology_isolation", "family_clan_ood",
+    "backbone", "parameter_scale", "raw_context", "tokenizer_patcher",
+    "input_adaptive", "budget", "metric_semantics", "generation", "memorization",
+    "biological_proxy", "code_weights", "publication_status", "overlap_with_tokbench", "novelty_impact"
+  ],
+  "works": [
+    {
+      "id": "BEACON",
+      "url": "https://proceedings.neurips.cc/paper_files/paper/2024/hash/a8ea503d91320fcfe12cba61c8a6d285-Abstract-Datasets_and_Benchmarks_Track.html",
+      "task": "RNA encoder (non-AR) benchmarks, 13 downstream tasks",
+      "tokenizer_patcher": "single nt / BPE / overlapping 6-mer / non-overlapping 6-mer",
+      "input_adaptive": false,
+      "generation": false,
+      "publication_status": "NeurIPS 2024 D&B",
+      "overlap_with_tokbench": "covers static RNA tokenizer comparison but encoder-only, no AR conditional generation, no BLT dynamic segmentation, no canonical codec",
+      "novelty_impact": "blocks 'first RNA tokenizer benchmark'"
+    },
+    {
+      "id": "GARNET",
+      "url": "https://www.nature.com/articles/s41467-024-54812-y",
+      "task": "RNA autoregressive generation",
+      "tokenizer_patcher": "single nt / overlapping dinucleotide / overlapping trinucleotide",
+      "input_adaptive": false,
+      "generation": true,
+      "publication_status": "Nat Commun 2024",
+      "overlap_with_tokbench": "AR RNA generation but single study-scale, no fixed matched FLOP checkpoints, no homology isolation, no dynamic segmentation, no codec headline",
+      "novelty_impact": "blocks 'first AR RNA tokenizer comparison'"
+    },
+    {
+      "id": "BiRNA-BERT",
+      "url": "UNKNOWN_VERIFY",
+      "task": "RNA BERT (masked, non-AR) NUC/BPE/k-mer comparison",
+      "input_adaptive": false,
+      "generation": false,
+      "publication_status": "published (contract-listed)",
+      "overlap_with_tokbench": "non-AR masked objectives, no BLT dynamic, no conditional generation",
+      "novelty_impact": "overlap in static RNA representation comparison (encoder)"
+    },
+    {
+      "id": "RNAret",
+      "url": "UNKNOWN_VERIFY",
+      "task": "RNA self-supervised representation",
+      "input_adaptive": false,
+      "publication_status": "published (contract-listed)",
+      "overlap_with_tokbench": "static representation, no dynamic segmentation",
+      "novelty_impact": "overlap in static RNA representation"
+    },
+    {
+      "id": "PatchDNA",
+      "url": "https://www.biorxiv.org/content/10.1101/2025.11.28.691095v1",
+      "task": "DNA fixed / entropy / conservation-guided patching + re-patching",
+      "tokenizer_patcher": "fixed, entropy, conservation-guided, re-patching",
+      "input_adaptive": true,
+      "generation": "UNKNOWN_VERIFY",
+      "publication_status": "bioRxiv v1",
+      "overlap_with_tokbench": "entropy/conservation patching in DNA; blocks 'first entropy/conservation patching in nucleic acids'; not RNA ncRNA AR + codec",
+      "novelty_impact": "blocks 'first entropy patching for nucleic acids'"
+    },
+    {
+      "id": "H-Net",
+      "url": "https://arxiv.org/abs/2507.07955",
+      "task": "tokenizer-free end-to-end hierarchical sequence modeling; include DNA (human genome) language modeling",
+      "training_objective": "autoregressive next-byte (AR) + also used in MLM downstream per LDARNet",
+      "backbone": "dynamic chunking + U-Net-like hierarchy",
+      "tokenizer_patcher": "learned dynamic chunking (DC): differentiable routing predicts boundaries",
+      "input_adaptive": true,
+      "code_weights": "goombalab/hnet + Cartesia checkpoints",
+      "publication_status": "arXiv 2025-07-10 (ICLR 2026 poster 10008794 per contract)",
+      "overlap_with_tokbench": "learned dynamic segmentation (adaptive); DNA modality; complete-system, not controlled patch-rule causal contrast; no homology isolation/codec/memorization",
+      "novelty_impact": "blocks 'first learned dynamic chunking for nucleic acids'; motivates Track L as reference-only"
+    },
+    {
+      "id": "DNAChunker",
+      "url": "https://arxiv.org/abs/2601.03019",
+      "task": "DNA masked language model (non-AR) with learnable adaptive segmentation (HG38)",
+      "training_objective": "masked",
+      "backbone": "mask-protected adaptive segmentation + hierarchical dechunking",
+      "tokenizer_patcher": "learnable context-dependent variable-length segmentation",
+      "input_adaptive": true,
+      "generation": false,
+      "publication_status": "arXiv 2026-01-30 (ICML)",
+      "overlap_with_tokbench": "learned dynamic segmentation in DNA masked LM; not AR ncRNA, no codec/continuation",
+      "novelty_impact": "blocks 'first learned variable-length segmentation for DNA'"
+    },
+    {
+      "id": "MergeDNA",
+      "url": "https://arxiv.org/abs/2511.14806",
+      "task": "DNA context-aware genome modeling via differentiable token merging",
+      "training_objective": "reconstruction + masked token modeling (three-stage)",
+      "tokenizer_patcher": "dynamic token merging (ToMe-style)",
+      "input_adaptive": true,
+      "generation": false,
+      "publication_status": "AAAI (per contract)",
+      "overlap_with_tokbench": "differentiable token merging in DNA; not AR ncRNA codec/continuation",
+      "novelty_impact": "blocks 'first differentiable token merging for genome'"
+    },
+    {
+      "id": "RNA_zero_shot_benchmark",
+      "url": "https://academic.oup.com/bib/article/27/2/bbag098/8509095",
+      "task": "zero-shot benchmark of open RNA LMs (structure/class/mutation fitness; TS-Hard/RfamSample/ArchiveII-Nr/RNAGym)",
+      "publication_status": "Brief Bioinform 2026",
+      "overlap_with_tokbench": "evaluates pre-trained ecosystems, not controlled tokenizer/segmentation under matched training",
+      "novelty_impact": "overlap in RNA biological-proxy evaluation resources"
+    },
+    {
+      "id": "BiomBenchmark",
+      "url": "https://www.nature.com/articles/s41467-025-66899-y",
+      "task": "11 genomic LMs, 4 RNA task classes, scenario-guided model selection",
+      "publication_status": "Nat Commun 2025",
+      "overlap_with_tokbench": "template for scenario matrix / efficiency reporting; compares different pre-trained gLMs (confounds data/backbone/scale/tokenizer), not same-backbone tokenizer control",
+      "novelty_impact": "blocks 'first scenario-based RNA gLM benchmark'; provides design template"
+    },
+    {
+      "id": "GenerRNA",
+      "url": "https://huggingface.co/pfnet/GenerRNA",
+      "task": "RNAcentral release 22, BPE-1024, 350M decoder model; updated vs historical weights must be distinguished",
+      "tokenizer_patcher": "BPE-1024 (static)",
+      "input_adaptive": false,
+      "generation": true,
+      "code_weights": "public weights (model_updated.pt / model.pt)",
+      "publication_status": "public reference",
+      "overlap_with_tokbench": "external AR reference; PRETRAIN_OVERLAP_EXPECTED_REFERENCE_ONLY on release-22 test",
+      "novelty_impact": "reference only; must not be silently merged into SOTA ranking"
+    },
+    {
+      "id": "LDARNet",
+      "url": "https://arxiv.org/abs/2606.04552",
+      "task": "DNA adaptive representation network with learnable tokenization (BiMamba-2) + FLOPs-matched controlled comparison",
+      "input_adaptive": true,
+      "publication_status": "arXiv 2026-06-03",
+      "overlap_with_tokbench": "DNA learnable tokenization, FLOPs-matched control; not RNA ncRNA AR codec/continuation",
+      "novelty_impact": "additional instance of 'latest genomic tokenizer benchmark' category; must be in updated matrix"
+    }
+  ],
+  "novelty_verdict": {
+    "G4_BROAD_NOVELTY": "FAIL",
+    "G4_NARROW_BENCHMARK": "CONDITIONAL_PASS_PENDING_UPDATED_COLLISION_MATRIX",
+    "retained_narrow_claim": "in broad multi-family ncRNA AR modeling, separate Flat-internal static representation effects and BLT-internal controlled patch-rule effects under common data, homology/family isolation, unified valid-nt exposure, common FLOP checkpoints, real decodable codec and true-suffix continuation, plus the cross-backbone deployment Pareto."
+  }
+}
