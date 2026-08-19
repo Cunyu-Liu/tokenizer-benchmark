@@ -148,10 +148,20 @@ class InternalBLTAdapter(RNAARAdapter):
         boundary, so the open patch contains only positions <= the last input
         position (no future-nt leak within the patch).
         """
+        return float(self.log_probs_next_base(prefix)[BASE_TO_IDX[nxt]])
+
+    def log_probs_next_base(self, prefix: str) -> list[float]:
+        """Full 4-way causal log-softmax for the next base given `prefix`.
+
+        Returns a list over A/C/G/U (natural-log softmax). This is the exact
+        conditional used by the canonical codec (contract 3.6): each position
+        i is scored as p(x_i | x_<i) with the causal open patch (no future-nt
+        leak), and the full distribution is quantized to the integer CDF.
+        """
         canon = self.canonicalize(prefix)
         if not canon:
             # leading base has no context (no BOS): uniform prior
-            return -math.log(4.0)
+            return [-math.log(4.0)] * 4
         seq_id = _seq_id(canon)
         ids = [BASE_TO_IDX[b] for b in canon]
         # Match training's last-context truncation: the model conditions on at
@@ -162,7 +172,7 @@ class InternalBLTAdapter(RNAARAdapter):
         bnd = self._boundary(self.decode(ids), seq_id)
         logits = self._forward_logits(ids, bnd)
         lp = F.log_softmax(logits[0, -1], dim=-1)
-        return float(lp[BASE_TO_IDX[nxt]].item())
+        return [float(lp[v].item()) for v in range(self.vocab)]
 
     def log_prob_token(self, ctx: list[int], token_id: int) -> float:
         raise NotImplementedError(

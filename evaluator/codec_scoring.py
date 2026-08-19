@@ -32,6 +32,15 @@ def _probs_from_logprobs(logps: list[float]) -> list[float]:
     return [x / s for x in w]
 
 
+def _encode_with_cdf(enc, probs, tid, total) -> tuple[float, float]:
+    """Encode one symbol and return (canonical_nll_bits, quantized_nll_bits)."""
+    cdf = quantize_cdf(probs, total)
+    enc.encode(cdf, tid, total)
+    p = probs[tid]
+    canon_bits = -math.log2(p) if p > 0 else float("inf")
+    return canon_bits, cdf_symbol_bits(cdf, tid, total)
+
+
 def canonical_codec_score(adapter, sequences) -> dict:
     """Actual canonical code length over a flat adapter's token paths.
 
@@ -53,12 +62,51 @@ def canonical_codec_score(adapter, sequences) -> dict:
         full_lp = adapter.all_log_probs_full(ids)
         for i, tid in enumerate(ids):
             probs = _probs_from_logprobs(full_lp[i])
-            cdf = quantize_cdf(probs, total)
-            enc.encode(cdf, tid, total)
-            quantized_nll_bits += cdf_symbol_bits(cdf, tid, total)
-            p = probs[tid]
-            if p > 0:
-                canonical_nll_bits += -math.log2(p)
+            cb, qb = _encode_with_cdf(enc, probs, tid, total)
+            canonical_nll_bits += cb
+            quantized_nll_bits += qb
+        valid_nt += len(canon)
+        n_sequences += 1
+    bitstream = enc.finish()
+    coded_bits = len(bitstream) * 8
+    return {
+        "coded_bits": coded_bits,
+        "quantized_cdf_nll_bits": quantized_nll_bits,
+        "canonical_nll_bits": canonical_nll_bits,
+        "valid_nt": valid_nt,
+        "n_sequences": n_sequences,
+        "canonical_code_length_BPN": coded_bits / valid_nt if valid_nt else float("nan"),
+        "canonical_code_nll_BPN": canonical_nll_bits / valid_nt if valid_nt else float("nan"),
+        "coder_consistency_ok": abs(coded_bits - quantized_nll_bits) <= 64,
+    }
+
+
+def canonical_codec_score_blt(adapter, sequences) -> dict:
+    """Actual canonical code length for a BLT arm (contract 3.6).
+
+    BLT cannot use a single full-sequence forward (the open-patch embedding
+    would leak future nt). Instead each position i is scored with the model's
+    full 4-way causal distribution p(x_i | x_<i) from `log_probs_next_base`,
+    using the same deterministic patch boundaries as training. The per-nt
+    canonical path is encoded through the frozen 64-bit range coder.
+    """
+    from .codec import RangeEncoder64 as _Enc
+    from .continuation_code_length import BASE_TO_IDX as _BTI
+
+    enc = _Enc()
+    total = CDF_TOTAL
+    canonical_nll_bits = 0.0
+    quantized_nll_bits = 0.0
+    valid_nt = 0
+    n_sequences = 0
+    for seq in sequences:
+        canon = canonicalize_seq(seq)
+        for i, nxt in enumerate(canon):
+            lp = adapter.log_probs_next_base(canon[:i])
+            probs = _probs_from_logprobs(lp)
+            cb, qb = _encode_with_cdf(enc, probs, _BTI[nxt], total)
+            canonical_nll_bits += cb
+            quantized_nll_bits += qb
         valid_nt += len(canon)
         n_sequences += 1
     bitstream = enc.finish()

@@ -1,7 +1,7 @@
 """Unit tests for canonical codec scoring + calibration baselines (contract 3.6)."""
 import math
 
-from evaluator.codec_scoring import canonical_codec_score, calibration_bpns
+from evaluator.codec_scoring import canonical_codec_score, canonical_codec_score_blt, calibration_bpns
 from evaluator.continuation_code_length import BASE_TO_IDX
 
 
@@ -69,3 +69,45 @@ def test_calibration_uniform_holdout_2_bits():
     hold = ["GUAC" * 500]
     b = calibration_bpns(train, hold, markov_order=0)
     assert abs(b["markov_order0_BPN"] - 2.0) < 0.05, b["markov_order0_BPN"]
+
+
+class _BLTUniformAdapter:
+    """BLT-like adapter: uniform 4-way next-base distribution, per-position."""
+    vocab = 4
+
+    def encode(self, seq):
+        return [BASE_TO_IDX[c] for c in seq]
+
+    def log_probs_next_base(self, prefix):
+        return [-math.log(4.0)] * 4
+
+
+class _BLTDeterministicAdapter:
+    """BLT-like adapter: deterministic next-base (observed symbol ~ prob 1)."""
+    vocab = 4
+
+    def encode(self, seq):
+        return [BASE_TO_IDX[c] for c in seq]
+
+    def log_probs_next_base(self, prefix):
+        lp = [1e-9, 1e-9, 1e-9, 1e-9]
+        # deterministic cyclic predictor: empty -> A, then A->C->G->U->A
+        if not prefix:
+            nxt = 0  # A
+        else:
+            nxt = (BASE_TO_IDX[prefix[-1]] + 1) % 4
+        lp[nxt] = 10.0
+        return lp
+
+
+def test_blt_uniform_codec_is_2_bits():
+    r = canonical_codec_score_blt(_BLTUniformAdapter(), ["ACGU" * 2000])
+    assert r["coder_consistency_ok"] is True
+    assert abs(r["canonical_code_nll_BPN"] - 2.0) < 1e-6
+    assert abs(r["canonical_code_length_BPN"] - 2.0) < 0.02
+    assert r["valid_nt"] == 8000
+
+
+def test_blt_deterministic_near_zero():
+    r = canonical_codec_score_blt(_BLTDeterministicAdapter(), ["ACGUACGUACGU"])
+    assert r["canonical_code_nll_BPN"] < 0.01, r["canonical_code_nll_BPN"]
