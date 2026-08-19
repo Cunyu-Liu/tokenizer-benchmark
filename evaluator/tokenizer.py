@@ -80,6 +80,11 @@ class NUCTokenizer(TokenizerBase):
         return len(ALPHABET)
 
 
+    def token_nt_counts(self, ids: list[int]) -> list[int]:
+        """Each NUC token covers exactly 1 nt (contract 3.6 attribution)."""
+        return [1] * len(ids)
+
+
 class KmerTokenizer(TokenizerBase):
     """overlapping (stride=1) or non-overlapping (stride=k) k-mer.
 
@@ -154,6 +159,25 @@ class KmerTokenizer(TokenizerBase):
         if self._overlapping:
             return 4 ** self.k
         return 4 ** self.k + sum(4 ** L for L in range(1, self.k))
+
+
+    def token_nt_counts(self, ids: list[int]) -> list[int]:
+        """Per-token canonical nt attribution (contract 3.6: each real nt scored
+        exactly once, no padding, no double count).
+
+        - overlap k-mer stride 1: token[0] covers the first k nt; each later
+          token contributes exactly 1 new nt (its last base).
+        - non-overlap k-mer: each full k-mer token covers k nt; the final
+          canonical tail token (length 1..k-1) covers its own length.
+        """
+        if self._overlapping:
+            if not ids:
+                return []
+            return [self.k] + [1] * (len(ids) - 1)
+        counts = []
+        for i in ids:
+            counts.append(len(self._id_to_mer[i]))
+        return counts
 
 
 class BPETokenizer(TokenizerBase):
@@ -341,6 +365,11 @@ class BPETokenizer(TokenizerBase):
         return len(self._id_to_token)
 
 
+    def token_nt_counts(self, ids: list[int]) -> list[int]:
+        """Subword tokens are variable-length; each covers len(decode(token)) nt."""
+        return [len(self._id_to_token[i]) for i in ids]
+
+
 class UnigramTokenizer(TokenizerBase):
     """Unigram LM with fixed vocab: single bases + frequent k-mers from train.
 
@@ -401,3 +430,8 @@ class UnigramTokenizer(TokenizerBase):
 
     def vocab_size(self) -> int:
         return len(self._id_to_token)
+    def token_nt_counts(self, ids: list[int]) -> list[int]:
+        """Subword tokens are variable-length; each covers len(decode(token)) nt."""
+        return [len(self._id_to_token[i]) for i in ids]
+
+
