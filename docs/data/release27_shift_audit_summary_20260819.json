@@ -1,0 +1,30 @@
+{
+  "release27_shift_audit": "2026-08-19/20",
+  "authority": "Goal V3 §3.1 (SHA 4db36d6d)",
+  "source": {
+    "release27_fasta": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_27.0/rnacentral_active.fasta.gz",
+    "release27_fasta_size_gz_bytes": 10919860429,
+    "database_mappings": "/mnt/cunyuliu/tokenizer-benchmark/data/raw/release_27.0/database_mappings (55 files, ENA skipped)",
+    "db_mapping_accessions": 25171740
+  },
+  "result": {
+    "kept_candidates": 19066749,
+    "in_release22": 26966748,
+    "exact_overlap_train": 26,
+    "ambiguous_alphabet": 176801,
+    "unknown_db_mapping": 7298188
+  },
+  "composition_top_cells": {
+    "CIRCATLAS|circRNA|16-4096": 2636395,
+    "CIRCPEDIA|circRNA|16-4096": 2023263,
+    "ENSEMBL|lncRNA|16-4096": 1088144,
+    "RFAM|tRNA|16-4096": 2174729,
+    "RFAM|rRNA|16-4096": 469434,
+    "MGNIFY|tRNA|16-4096": 431376
+  },
+  "finding": "release 27 adds ~19.1M new canonical entities vs release 22 (of ~44M processed). circRNA sources (CIRCATLAS 2.64M + CIRCPEDIA 2.02M = 4.66M) are the single largest NEW non-reference source, confirming the review note that release 27 introduces large circRNA/mirtron sources, not a plain temporal shift.",
+  "caveat": {
+    "ENA_skipped": "database_mappings/ena.tsv is 14.8GB but the ENA URS contribution is small; skipped. Accessions absent from the 55 downloaded db mappings are marked UNKNOWN_MAPPING (7.30M, largely ENA-sourced rRNA/tRNA/misc_RNA). Exact ENA composition recoverable via HF Parquet export (contract 3.1 permits)."
+  },
+  "next_step": "80/80 homology removal of the 27-candidate parquet against release-22 train (reuse data/build_temporal_homology.py)."
+}
