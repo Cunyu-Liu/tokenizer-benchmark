@@ -172,6 +172,11 @@ def main() -> None:
         "exact_overlap_train": n_exact,
         "ambiguous_alphabet": n_ambiguous,
         "unknown_db_mapping": n_unknown_map,
+        "skipped_source_databases": {
+            "ENA": "database_mappings/ena.tsv is 14.8GB but contributes ~42k URS (<0.5%): "
+                   "skipped; its release-27 accessions are counted under source_database=UNKNOWN_MAPPING "
+                   "here. To recover exact ENA composition use the HF Parquet export (contract 3.1 permits).",
+        },
         "composition": composition_counts(kept),
     }
     comp_path = args.out_dir / "release27_composition.json"
