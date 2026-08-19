@@ -79,11 +79,21 @@ class InternalFlatAdapter(RNAARAdapter):
         return self.tok.decode(list(ids))
 
     # --- forward ---
-    def _logits(self, token_ids: list[int]) -> torch.Tensor:
-        """Forward a token sequence; returns logits (1, T, vocab) on device."""
+    def _logits(self, token_ids: list[int], bf16: bool = True) -> torch.Tensor:
+        """Forward a token sequence; returns logits (1, T, vocab) on device.
+
+        `bf16=False` runs the forward in fp32. The canonical codec (contract
+        3.6) MUST use fp32 so the batched encoder and the KV-cache decoder
+        produce bit-identical CDFs (verified: fp32 batched == per-prefix ==
+        KV-cache); bf16 autocast kernels differ by sequence shape.
+        """
         t = torch.tensor([token_ids], dtype=torch.long, device=self.device)
-        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
-            logits, _ = self.model(t, targets=None)
+        with torch.no_grad():
+            if bf16:
+                with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                    logits, _ = self.model(t, targets=None)
+            else:
+                logits, _ = self.model(t, targets=None)
         return logits.float()
 
     # --- batched (single-forward) scoring, equivalent to per-position path ---
@@ -117,7 +127,7 @@ class InternalFlatAdapter(RNAARAdapter):
             out[i] = float(lp[i - 1, ids[i]].item())
         return out
 
-    def all_log_probs_full(self, ids: list[int]) -> list[list[float]]:
+    def all_log_probs_full(self, ids: list[int], bf16: bool = True) -> list[list[float]]:
         """Full (T, vocab) log-probs over the canonical token path.
 
         Position 0 uses a uniform prior (no BOS, matching all_log_probs_token);
@@ -130,7 +140,7 @@ class InternalFlatAdapter(RNAARAdapter):
         rows = [[uniform] * self.vocab for _ in range(n)]
         if n <= 1:
             return rows
-        lp = F.log_softmax(self._logits(ids)[0], dim=-1)  # (T, vocab)
+        lp = F.log_softmax(self._logits(ids, bf16=bf16)[0], dim=-1)  # (T, vocab)
         for i in range(1, n):
             rows[i] = [float(lp[i - 1, v].item()) for v in range(self.vocab)]
         return rows
@@ -146,6 +156,22 @@ class InternalFlatAdapter(RNAARAdapter):
         logits = self._logits(ctx)
         lp = F.log_softmax(logits[0, -1], dim=-1)
         return float(lp[token_id].item())
+
+    def log_probs_token(self, ctx: list[int], bf16: bool = True) -> list[float]:
+        """Full-vocab log-probs given a token context (canonical codec decode).
+
+        Mirrors `all_log_probs_full` at a single position: an empty context
+        gives a uniform prior over the vocab (no BOS); otherwise one causal
+        forward over the context and the full log_softmax at the last position.
+        The independent decoder uses exactly this so encode/decode share the
+        identical per-prefix CDFs (contract 3.6 byte-identical recovery).
+        """
+        uniform = -math.log(float(self.vocab))
+        if not ctx:
+            return [uniform] * self.vocab
+        logits = self._logits(list(ctx), bf16=bf16)
+        lp = F.log_softmax(logits[0, -1], dim=-1)
+        return [float(lp[v].item()) for v in range(self.vocab)]
 
     def log_prob_next_base(self, prefix: str, nxt: str) -> float:
         """Exact per-base log p(nxt | prefix).
