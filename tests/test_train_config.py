@@ -52,7 +52,8 @@ def test_non_embedding_identical_within_scale():
 
 
 def test_run_counts_and_seeds():
-    assert len(tc.all_100M()) == len(ARMS_100M) * len(SEEDS) == 30
+    # Track R (10 arms) + B1 bridge (1 arm) = 11 arms x 3 seeds = 33 core runs.
+    assert len(tc.all_100M()) == len(ARMS_100M) * len(SEEDS) == 33
     assert len(tc.all_350M()) == len(ARMS_350M) * len(SEEDS) == 12
     assert SEEDS == [17, 29, 43]
 
