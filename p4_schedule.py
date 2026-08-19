@@ -37,7 +37,7 @@ LAUNCH_LOG = f"{RUNS}/phase4_launch.log"
 TIMEOUT_S = 650000  # generous wall-clock; nohup+timeout mirrors prior launches
 FREE_MIN_MiB = 20000
 
-ARM_RE = re.compile(r"^(F[1-7]|P[1-3])$")
+ARM_RE = re.compile(r"^(F[1-7]|P[1-3]|B1)$")
 
 
 def _occupied_uuids() -> set[str]:

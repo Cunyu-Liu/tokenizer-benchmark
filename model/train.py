@@ -62,6 +62,10 @@ def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
         return None
     t = cfg.arm.tokenizer_type
     if t == "fixed_patch":
+        if cfg.arm.id == "B1":
+            # Bridge B1 (contract 3.2.1): BLT with patch-size=1 (every nt is
+            # its own patch), not the entropy-calibrated mean used by P1.
+            return PatchPolicy(kind="fixed", patch_len=1)
         plen = int(round(calib.mean_patch_len)) if calib else 8
         return PatchPolicy(kind="fixed", patch_len=max(1, plen))
     if t == "random_patch":

@@ -1,6 +1,7 @@
-"""Ten-arm 100M registry (3.2). Maps arm ID to (backbone, representation)."
+"""Ten-arm Track R + B1 bridge 100M registry (3.2, 3.2.1).
 
-F1-F7 static track on FlatCausalLM; P1-P3 patch track on BLTCausalLM.
+F1-F7 static track on FlatCausalLM; P1-P3 patch track on BLTCausalLM; B1 is
+the bridge arm (BLT patch-size=1) for the 2x2 system decomposition.
 
 Contract constraints:
   - F1-F7 share depth/width/attn/pos-enc/context and sequence order.
@@ -40,6 +41,10 @@ ARMS_100M: list[ArmSpec] = [
     ArmSpec("P1", "blt", "fixed_patch", 4, None, None, "fixed-length patch"),
     ArmSpec("P2", "blt", "random_patch", 4, None, None, "length-matched random patch"),
     ArmSpec("P3", "blt", "entropy_patch", 4, None, None, "causal entropy patch"),
+    # B1 bridge arm (contract 3.2.1): BLT with patch-size=1. Shares BLT
+    # params with P1-P3; patch_size=1 is set explicitly in _patch_policy_for_arm
+    # (not the entropy-calibrated mean used by P1).
+    ArmSpec("B1", "blt", "fixed_patch", 4, 1, 1, "BLT patch-size=1 bridge"),
 ]
 
 ARMS_350M: list[ArmSpec] = [

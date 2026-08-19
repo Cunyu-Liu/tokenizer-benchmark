@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Phase 4 automatic run scheduler (owner-approved: use all 6 GPUs).
+"""Phase 4 automatic run scheduler (V3 Appendix B: <=2 exclusive GPU jobs).
 
-Monitors GPU availability and dispatches the remaining Phase 4 science runs
-(10 arms x 3 seeds = 30 total) in a fixed priority order, maximizing GPU
-utilization across GPU0-5 (up to 6 concurrent 100M jobs; recorded as an
-approved operational deviation from Appendix B's '<=2 parallel' on 2026-08-15).
+Dispatches Phase 4 core science runs (Track R 10 arms x 3 seeds + B1 bridge
+3 seeds = 33 runs) in a fixed priority order, limited to at most 2 exclusive
+GPU jobs in parallel (V3 Appendix B; GPUs are not shared).
+
+History: a 2026-08-15 '6 concurrent' and 2026-08-17 '9 concurrent stacking'
+deviation were approved under Goal V2. Goal V3 (2026-08-19) rescinds both back
+to the Appendix B '<=2 parallel' rule. Already-running jobs are NOT killed; the
+cap only limits NEW dispatches.
 
 Queue logic:
-  - A run is "needed" if (arm, seed) is in the 30-cell matrix and no existing
+  - A run is "needed" if (arm, seed) is in the 33-cell matrix and no existing
     phase4_<arm>_s<seed>_* run dir has status DONE.
   - FAIL_CLOSED_WITH_EVIDENCE / RUNNING_PRE_MANIFEST (stale) dirs do NOT count
     as done; the same (arm, seed) is re-launched (new run dir).
-  - Priority order (contract + owner): F7 s17 -> P2 s17 -> P3 s17 -> all other
-    s17 -> s29 -> s43 (arm order F1..F7, P1..P3).
+  - Priority order: F7 s17 -> P2 s17 -> P3 s17 -> B1 s17 -> all other
+    s17 -> s29 -> s43 (arm order F1..F7, P1..P3, B1).
 
 Launch uses the exact reliable env (conda python, CUDA_VISIBLE_DEVICES pin,
-expandable_segments). MIG partitions (GPU6/7) and occupied GPUs are skipped.
+expandable_segments). MIG partitions (GPU6/7) are skipped. Legacy
+mRNA_editflow processes are ignored (never killed per owner).
 Logs every dispatch to phase4_auto.log.
 
 Usage:
@@ -38,14 +43,21 @@ PROJ = "/home/cunyuliu/tokenizer-benchmark"
 RUNS = "/mnt/cunyuliu/tokenizer-benchmark/runs"
 AUTO_LOG = f"{RUNS}/phase4_auto.log"
 TIMEOUT_S = 650000
-FREE_MIN_MiB = 20000
-MAX_CONCURRENT = 6  # owner-approved deviation: use GPU0-5 fully
+FREE_MIN_MiB = 12000        # per-run minimum free memory to place a new run
+REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
+# V3 Appendix B (2026-08-19): 100M training uses at most 2 exclusive GPU jobs
+# in parallel; GPUs are not shared. This rescinds the 2026-08-17 owner-approved
+# 9-concurrent stacking deviation (GPU1/2/4 second-run). Already-running jobs
+# are NOT killed; the cap only limits NEW dispatches.
+MAX_PER_GPU = 1             # GPUs are not shared (V3 Appendix B)
+MAX_CONCURRENT = 2          # at most 2 exclusive GPU jobs in parallel
 
-ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3"]
+ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
-# Priority: within a seed, F7/P2/P3 first (still pending), then the rest.
-PRIORITY_PREFIX = {"F7": 0, "P2": 1, "P3": 2}
-ARM_RE = re.compile(r"^(F[1-7]|P[1-3])$")
+# Priority: within a seed, F7/P2/P3 first (still pending), then B1 bridge,
+# then the rest.
+PRIORITY_PREFIX = {"F7": 0, "P2": 1, "P3": 2, "B1": 3}
+ARM_RE = re.compile(r"^(F[1-7]|P[1-3]|B1)$")
 
 
 def log(msg: str):
@@ -116,20 +128,31 @@ def _our_gpu_pids() -> dict:
 
 
 def free_gpus() -> list[dict]:
-    """Full, non-MIG GPUs with enough free memory for a 100M run.
+    """Return candidate GPU placements, one entry per usable run slot.
 
-    Decision rule (2026-08-16, owner-approved: keep legacy mRNA_editflow
-    processes running): a GPU is usable if it is non-MIG, has
-    >= FREE_MIN_MiB free memory, and is NOT already hosting one of our
-    p4_train training processes (no double-booking). Legacy non-benchmark
-    processes occupy a few GiB on some cards but leave ample free memory.
+    V3 Appendix B (2026-08-19): GPUs are not shared, so each non-MIG GPU has
+    at most one our-run; a GPU is usable for a new run if it currently hosts
+    zero our-runs and has enough free memory. Legacy mRNA_editflow processes
+    are ignored (kept running per owner).
     """
     our_gpus = _our_gpu_pids()
-    cands = [g for g in gpu_table()
-             if not g["mig"]
-             and g["free"] >= FREE_MIN_MiB
-             and not our_gpus.get(g["index"])]
-    return sorted(cands, key=lambda g: (g["index"] == 0, -g["free"]))
+    cands = []
+    for g in gpu_table():
+        if g["mig"]:
+            continue
+        our_n = len(our_gpus.get(g["index"], ()))
+        if our_n >= MAX_PER_GPU:
+            continue
+        # free memory must accommodate the next run on top of current usage
+        if g["free"] >= REQ_MEM_MiB:
+            entry = dict(g)
+            entry["our_runs"] = our_n
+            entry["slots"] = min(MAX_PER_GPU - our_n,
+                                 g["free"] // REQ_MEM_MiB)
+            cands.append(entry)
+    # Prefer cards with more free slots, tie-break by index.
+    cands.sort(key=lambda e: (-e["slots"], e["index"]))
+    return cands
 
 
 def existing_run_statuses() -> dict:
@@ -227,11 +250,13 @@ def one_pass(dry_run: bool = False) -> int:
     running = running_count(existing)
     needed = build_priority_queue(existing)
 
-    log("pass: running=%d free=%d needed=%d" % (running, len(free), len(needed)))
+    log("pass: running=%d free_placements=%d needed=%d" % (running, len(free), len(needed)))
     for (arm, seed) in needed:
         log("  pending %s s%d" % (arm, seed))
 
     launched = 0
+    # Launch at most one run per GPU slot; each placement is one entry in
+    # `free` (already accounts for the per-GPU cap and per-slot free memory).
     for g in free:
         if running + launched >= MAX_CONCURRENT:
             break
@@ -239,7 +264,8 @@ def one_pass(dry_run: bool = False) -> int:
             break
         arm, seed = needed.pop(0)
         if dry_run:
-            log("DRY: would launch %s s%d on GPU%d" % (arm, seed, g["index"]))
+            log("DRY: would launch %s s%d on GPU%d (our_runs=%d)" % (
+                arm, seed, g["index"], g.get("our_runs", 0)))
         else:
             launch(arm, seed, g["index"])
         launched += 1
