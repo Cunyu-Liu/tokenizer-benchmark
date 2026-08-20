@@ -35,7 +35,23 @@ SPLIT_8080 = "/mnt/cunyuliu/tokenizer-benchmark/data/derived/split/release22_spl
 TRAIN_VIEW = "train"
 
 
-def _load_seqs(split_path: str, split: str, n: int | None = None) -> list[str]:
+def _load_seqs(split_path: str, split: str, n: int | None = None,
+                subsample: str | None = None) -> list[str]:
+    """Sequence list to codec-score.
+
+    - If `subsample` parquet is given, load its `canonical_sequence` column
+      verbatim (the FROZEN homology-stratified subset shared by all arms, so the
+      cross-arm canonical codec BPN is measured on the same test entities).
+    - Else fall back to the first `n` test rows of the split manifest in the
+      frozen split order.
+    """
+    if subsample is not None:
+        pf = pq.ParquetFile(subsample)
+        out: list[str] = []
+        for batch in pf.iter_batches(batch_size=50_000,
+                                     columns=["canonical_sequence"]):
+            out.extend(batch.to_pydict()["canonical_sequence"])
+        return out[:n] if n is not None else out
     out = []
     pf = pq.ParquetFile(split_path)
     for batch in pf.iter_batches(batch_size=50_000,
@@ -57,6 +73,9 @@ def main() -> None:
     ap.add_argument("--split", default="test")
     ap.add_argument("--n", type=int, default=None,
                     help="subsample size for the codec stream (None = full split)")
+    ap.add_argument("--subsample", type=str, default=None,
+                    help="homology-stratified subsample parquet to score "
+                         "(same frozen subset for all arms; overrides --n)")
     ap.add_argument("--calib-n", type=int, default=2000,
                     help="train sequences used to fit Markov/PPM baselines")
     ap.add_argument("--device", type=int, default=0)
@@ -73,7 +92,8 @@ def main() -> None:
         from evaluator.internal_adapter import InternalFlatAdapter
         adapter = InternalFlatAdapter(args.arm, args.seed, args.ckpt, device=device)
 
-    seqs = _load_seqs(SPLIT_8080, args.split, args.n)
+    seqs = _load_seqs(SPLIT_8080, args.split, args.n,
+                            args.subsample)
     if not seqs:
         raise SystemExit("no sequences for split=%s" % args.split)
 
@@ -82,6 +102,7 @@ def main() -> None:
     result["seed"] = args.seed
     result["split"] = args.split
     result["n_sequences_loaded"] = len(seqs)
+    result["codec_subsample"] = args.subsample
     result["run_id"] = adapter.cfg.run_id
     result["ckpt"] = args.ckpt
     result["device"] = device
