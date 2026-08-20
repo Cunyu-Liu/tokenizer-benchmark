@@ -49,6 +49,24 @@ def _seq_id(canon: str) -> int:
     """Stable 32-bit sequence id (same rule as model/dataset._seq_id)."""
     return zlib.crc32(canon.encode("utf-8"))
 
+_MASK64 = np.uint64(0xFFFFFFFFFFFFFFFF)
+
+
+def _splitmix64(x):
+    """Deterministic 64-bit finalizer (SplitMix64).
+
+    Works on a scalar np.uint64 OR element-wise over an np.uint64 array, so the
+    per-position draw is computed with vectorized numpy ops in
+    ``boundaries_batch`` while the offline ``_random`` scalar path stays
+    bit-identical. This replaces the per-position ``random.Random`` object
+    construction that was the P2 training bottleneck.
+    """
+    with np.errstate(over="ignore", invalid="ignore"):
+        z = (np.uint64(x) + np.uint64(0x9E3779B97F4A7C15)) & _MASK64
+        z = ((z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)) & _MASK64
+        z = ((z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)) & _MASK64
+        return z ^ (z >> np.uint64(31))
+
 
 @dataclass
 class ConditionalRandomPatchPolicy:
@@ -64,6 +82,7 @@ class ConditionalRandomPatchPolicy:
     ent_edges: list[float] | None = None
     prefix_edges: list[int] | None = None
     p3_boundary: object = None         # exact P3 replay (str,length)->list[int]
+    p3_policy: object = None           # EntropyPatchPolicy (vectorized P3 replay, non-supported strata)
     coverage_report: dict | None = None
 
     # -- binning ------------------------------------------------------------
@@ -185,9 +204,17 @@ class ConditionalRandomPatchPolicy:
 
     # -- runtime ------------------------------------------------------------
     def _random(self, seq_id: int, i: int) -> float:
-        """Deterministic per-(seq_id, position) random draw in [0,1)."""
-        return random.Random(
-            (self.seed << 32) ^ ((seq_id << 16) ^ i)).random()
+        """Deterministic per-(seq_id, position) random draw in [0,1).
+
+        Vectorized-friendly: draw = splitmix64(seed ^ seq_id<<32 ^ i) / 2^53.
+        Depends only on (sequence_id, position i, patch_randomization_seed), so
+        it is frozen and shared by all P2 model seeds (contract 3.2). Matches
+        ``boundaries_batch`` exactly (offline and batched use the same rule), so
+        train/eval/generate reproduce identical boundaries.
+        """
+        h = (np.uint64(seq_id) << np.uint64(32)) \
+            ^ np.uint64(self.seed) ^ np.uint64(i)
+        return float(_splitmix64(h) >> np.uint64(11)) * (1.0 / (1 << 53))
 
     def _boundaries_from_entropy(self, canon: str, ent: np.ndarray,
                                  seq_id: int, p3_bnd: Sequence[int] | None
@@ -229,32 +256,70 @@ class ConditionalRandomPatchPolicy:
     def boundaries_batch(self, nt_ids) -> "torch.Tensor":
         """Batched GPU interface used by the training loop.
 
-        `nt_ids` is an (B, T) LongTensor of nt ids (0..3). Per-sequence entropy
-        comes from one GRU forward; boundaries use only causal prefix + entropy.
+        `nt_ids` is an (B, T) LongTensor of nt ids (0..3, <0 = true padding).
+        One GRU forward yields per-position causal entropy; boundaries use only
+        causal prefix + causal entropy. Fully vectorized over (B, T) (prefix /
+        entropy binning via searchsorted, deterministic draw via splitmix64) so
+        the old per-position ``random.Random`` construction -- the P2 training
+        bottleneck -- is gone.
         """
         import torch
         if self.q_table is None:
             raise RuntimeError("fit_q() must be called before boundaries_batch()")
         self.entropy_predictor.eval()
         with torch.no_grad():
-            ent = self.entropy_predictor.entropy(nt_ids)  # (B, T)
+            ent = self.entropy_predictor.entropy(nt_ids)   # (B, T)
         B, T = ent.shape
-        out = torch.zeros_like(ent, dtype=torch.float32)
-        ent_np = ent.cpu().numpy()
-        ids_np = nt_ids.cpu().numpy()
-        for b in range(B):
-            n = int((ids_np[b] >= 0).sum())
-            if n <= 0:
-                continue
-            canon = "".join(_ALPH_ID_TO_BASE if False else _base_from_id(ids_np[b][i])
-                            for i in range(n))
-            sid = _seq_id(canon)
-            # P3 boundary for exact replay in non-supported strata
-            p3_bnd = self.p3_boundary(canon, n) if self.p3_boundary else None
-            bnd = self._boundaries_from_entropy(canon, ent_np[b][:n], sid, p3_bnd)
-            for i, v in enumerate(bnd):
-                out[b, i] = v
-        return out
+        device = ent.device
+        ent_np = ent.detach().cpu().numpy().astype(np.float64)
+        ids_np = nt_ids.detach().cpu().numpy()
+        valid = ids_np >= 0
+
+        # Vectorized P3 exact replay (non-supported strata) from the SAME causal
+        # entropy + frozen gate -> identical to EntropyPatchPolicy.boundaries_batch.
+        p3_np = None
+        if self.p3_policy is not None:
+            from .entropy_predictor import boundaries_from_entropy
+            with torch.no_grad():
+                p3_t = boundaries_from_entropy(ent, self.p3_policy.gate)
+            p3_np = p3_t.detach().cpu().numpy()
+
+        # Prefix-length bin (log-spaced edges), vectorized over positions.
+        pe = np.asarray(self.prefix_edges, dtype=np.int64)
+        pos = np.arange(T, dtype=np.int64)[None, :]              # (1, T)
+        i_clamped = np.clip(pos, pe[0], pe[-1] - 1)
+        prefix_bin = np.clip(
+            np.searchsorted(pe, i_clamped, side="right") - 1,
+            0, self.n_prefix_bins - 1)                           # (1, T)
+
+        # Causal-entropy bin (quantile-spaced edges), vectorized.
+        ee = np.asarray(self.ent_edges, dtype=np.float64)
+        e_clamped = np.clip(ent_np, ee[0], ee[-1] - 1e-12)
+        ent_bin = np.clip(
+            np.searchsorted(ee, e_clamped, side="right") - 1,
+            0, self.n_entropy_bins - 1)                          # (B, T)
+
+        qt = np.asarray(self.q_table, dtype=np.float64)          # (nb, ne)
+        q = qt[prefix_bin, ent_bin]                              # (B, T)
+        supported = (q >= SUPPORT_LO) & (q <= SUPPORT_HI)
+
+        # Deterministic vectorized draw in [0,1): splitmix64(seq_id<<32 ^ seed ^ i).
+        nrows = valid.sum(axis=1)                                # (B,)
+        seqid_col = np.zeros(B, dtype=np.uint64)
+        for b in range(B):                                       # B = batch_size_seq (small)
+            n = int(nrows[b])
+            if n > 0:
+                canon = "".join(_base_from_id(int(ids_np[b][jj])) for jj in range(n))
+                seqid_col[b] = np.uint64(_seq_id(canon) & 0xFFFFFFFF)
+        key = (seqid_col[:, None] << np.uint64(32)) \
+            ^ np.uint64(self.seed) ^ pos.astype(np.uint64)       # (B, T)
+        draw = (_splitmix64(key) >> np.uint64(11)).astype(np.float64) * (1.0 / (1 << 53))
+
+        out = np.where(supported, (draw < q).astype(np.float32),
+                       p3_np if p3_np is not None else 0.0)
+        out = np.where(valid, out, 0.0)                          # true padding -> 0
+        return torch.from_numpy(out.astype(np.float32)).to(device=device)
+
 
 
 _ALPH_ID_TO_BASE = ["A", "C", "G", "U"]
@@ -278,6 +343,7 @@ def build_conditional_random_policy(calib, device: str = "cuda:0"):
         entropy_predictor=calib.predictor,
         device=device,
         p3_boundary=lambda s, l: p3.boundary(s, l))
+    pol.p3_policy = p3
     return pol, p3
 
 
@@ -306,5 +372,6 @@ def fit_p2_q(calib, data_path: str, device: str = "cuda:0",
         entropy_predictor=calib.predictor,
         device=device,
         p3_boundary=lambda s, l: p3.boundary(s, l))
+    pol.p3_policy = p3
     report = pol.fit_q(seqs, p3_bnds, device=device)
     return pol, report
