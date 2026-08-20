@@ -51,7 +51,7 @@ REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
 # MAX_CONCURRENT total. This supersedes the V3 Appendix B 'max 2 exclusive'
 # cap for Phase 4 closure. The free_gpus() memory gate prevents OOM; legacy
 # and other-user processes are touched. Already-running jobs are not killed.
-MAX_PER_GPU = 2             # stack up to 2 our-runs per GPU where memory fits
+MAX_PER_GPU = 3             # stack up to 3 our-runs per GPU where memory fits (owner: GPU1/2/4 stacking)
 MAX_CONCURRENT = 16         # fill available GPU-memory slots toward 33 runs
 
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
