@@ -45,12 +45,14 @@ AUTO_LOG = f"{RUNS}/phase4_auto.log"
 TIMEOUT_S = 650000
 FREE_MIN_MiB = 12000        # per-run minimum free memory to place a new run
 REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
-# V3 Appendix B (2026-08-19): 100M training uses at most 2 exclusive GPU jobs
-# in parallel; GPUs are not shared. This rescinds the 2026-08-17 owner-approved
-# 9-concurrent stacking deviation (GPU1/2/4 second-run). Already-running jobs
-# are NOT killed; the cap only limits NEW dispatches.
-MAX_PER_GPU = 1             # GPUs are not shared (V3 Appendix B)
-MAX_CONCURRENT = 2          # at most 2 exclusive GPU jobs in parallel
+# Concurrency (owner re-authorized 2026-08-20): to close the core 33-run
+# Phase-4 matrix (16 cells pending incl. the B1 bridge x3), allow up to 2
+# our-runs per GPU stacked where free memory >= REQ_MEM_MiB, up to
+# MAX_CONCURRENT total. This supersedes the V3 Appendix B 'max 2 exclusive'
+# cap for Phase 4 closure. The free_gpus() memory gate prevents OOM; legacy
+# and other-user processes are touched. Already-running jobs are not killed.
+MAX_PER_GPU = 2             # stack up to 2 our-runs per GPU where memory fits
+MAX_CONCURRENT = 16         # fill available GPU-memory slots toward 33 runs
 
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
@@ -171,7 +173,7 @@ def existing_run_statuses() -> dict:
         out = subprocess.run(
             ["ps", "-eo", "args="], capture_output=True, text=True, check=True).stdout
         for line in out.splitlines():
-            m = re.search(r"p4_train\.py --arm (F[1-7]|P[1-3]) --seed (17|29|43)", line)
+            m = re.search(r"p4_train\.py --arm (F[1-7]|P[1-3]|B1) --seed (17|29|43)", line)
             if m:
                 live.add((m.group(1), int(m.group(2))))
     except Exception:
@@ -181,7 +183,7 @@ def existing_run_statuses() -> dict:
     if not os.path.isdir(RUNS):
         return {k: ("RUNNING" if k in live else "UNKNOWN") for k in live}
     for d in os.listdir(RUNS):
-        m = re.match(r"phase4_(F[1-7]|P[1-3])_s(17|29|43)_", d)
+        m = re.match(r"phase4_(F[1-7]|P[1-3]|B1)_s(17|29|43)_", d)
         if not m:
             continue
         arm, seed = m.group(1), int(m.group(2))
