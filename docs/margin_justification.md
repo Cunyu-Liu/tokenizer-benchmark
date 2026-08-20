@@ -25,6 +25,16 @@ Justification anchors:
    exactly `2.000 bits/nt` (no EOS). A 1% margin on `canonical_code_length_BPN`
    is therefore `0.02 bits/nt`. Any head-to-head that resolves below this is
    within 1% of the theoretical reference — an interpretable floor.
+1.5 **Measured calibration-baseline floor (contract §3.6; produced 2026-08-20):**
+   on the FROZEN homology-stratified sealed-test subsample (1000 seqs,
+   sha `f43d16245`, `data/derived/codec_subsample/blt_test_subsample.parquet`),
+   fit on a 2000-seq train view and scored on the same 1000 holdout:
+   uniform = `2.0000` BPN (theoretical), order-3 Markov = `1.9715` BPN,
+   PPM(order 5) = `1.9900` BPN. The compression floor is only ~1.4% (Markov3)
+   below uniform, so a 1% neural BPN margin is a real, non-negligible fraction
+   of the compressible headroom above the non-neural baselines. Full-train-fit
+   baselines (million-nt) will only tighten Markov below 1.97, keeping the
+   floor meaningful.
 2. **Coder repeat noise (measured):** the frozen 64-bit byte-oriented range coder
    has a documented fixed lookahead overhead of ~66–72 bits **per stream**
    (`coder_overhead_bits`, bound `CODEC_OVERHEAD_BITS=128`), independent of stream
