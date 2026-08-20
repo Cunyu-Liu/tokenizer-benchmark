@@ -1,0 +1,53 @@
+# Decision Map (Phase 4-G draft)
+# Version: 1.0-draft (2026-08-20). FROZEN at FINAL_UNSEAL; no edits after unseal.
+# Ref: PLAN_审稿修订版_20260819.md §1.5/§3.9.2/§3.9.3, Goal V3 §136/§690/§822.
+# Margin thresholds MUST match docs/margin_justification.md.
+
+frozen_at: "PENDING_FINAL_UNSEAL"   # set to timestamp at FINAL_UNSEAL_LOCK
+
+comparison_families:
+  R_FLAT:  [F1, F2, F3, F4, F5, F6, F7]     # Flat static-tokenizer internal
+  R_BLT:   [P1, P2, P3]                      # BLT controlled patch-rule internal
+  R_SYSTEM: [F1, F2, F3, F4, F5, F6, F7, P1, P2, P3, B1]   # complete-system only
+  D_DEPLOYMENT: [D1, D2]                     # only if Track D enabled
+  L_LEARNED_DYNAMIC: []                      # only after amendment formalized
+
+tasks:
+  - canonical_code            # canonical_code_length_BPN (headline)
+  - true_suffix_continuation  # required main-text secondary
+  - unconditional_generation  # exploratory panel only, not for confirmatory ranking
+
+length_bins:
+  - {nat: L1, range: "16-127"}
+  - {nat: L2, range: "128-511"}
+  - {nat: L3, range: "512-4096"}
+  - {nat: L4, range: "4097-16384", ood_label: "local-window length_OOD"}
+
+compute_axes:
+  - valid-nt exposure
+  - common cumulative FLOPs
+  - end-to-end inference latency
+  - peak VRAM
+  - effective raw context
+
+support_gates:
+  min_homology_clusters: 100
+  min_eligible_families: 20   # family-related cells
+
+cell_decision:
+  entries: WINNER | TRADE_OFF_SET | NO_RESOLVED_WINNER | INSUFFICIENT_SUPPORT | INCONCLUSIVE_UNDERPOWERED
+  # Only report per-cell effect sizes + CI + cost + harm + cross-seed stability.
+  # No single-cell winner in main text; Pareto non-dominated set is pre-frozen on
+  # validation before final test (one-shot out-of-sample eval).
+
+margins:   # MUST equal docs/margin_justification.md
+  bpn_relative_pct: 1.0
+  latency_pct: 15.0
+  validity_or_family_pp: 2.0
+  memorization_pp: 1.0
+  distribution_distance_pct: 5.0
+  # practical-equivalence half-width rule: max(margin, coder_noise, seed_bootstrap_halfwidth)
+
+supplementary_selector_only:
+  enabled: false              # full pairwise-dominance/regret/coverage/harm/abstention in supplement
+  d_floors: {}                # per-metric frozen distribution floors (populate if enabled)
