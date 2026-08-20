@@ -100,6 +100,22 @@ def _hash(seqs: list[str]) -> str:
     return h.hexdigest()
 
 
+def continuation_cut(n: int, frac: float) -> int | None:
+    """Contract 3.7 raw-nt continuation cut.
+
+    The common cut point is fixed to `6 * floor((ratio * sequence_length) / 6)`
+    (the observed prefix is measured in raw nucleotides, floored to a multiple
+    of 6). Returns None when the sample would have a non-positive prefix or no
+    remaining suffix, i.e. only samples with at least 1 real-nt suffix are
+    continued; all models then see the exact same raw prefix for the same
+    sequence.
+    """
+    k = 6 * int((n * frac) // 6)
+    if k <= 0 or k >= n:
+        return None
+    return k
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", required=True)
@@ -135,7 +151,11 @@ def main() -> None:
             for s, seq in zip(d["split_membership"], d["canonical_sequence"]):
                 if s == "test":
                     c = _canon(seq)
-                    k = max(1, int(round(len(c) * args.prefix_frac)))
+                    # contract 3.7: raw-nt cut floored to a multiple of 6;
+                    # exclude samples with no real-nt suffix (>=1 nt required).
+                    k = continuation_cut(len(c), args.prefix_frac)
+                    if k is None:
+                        continue
                     prefixes.append(c[:k])
                     true_seqs.append(c)
                     if len(prefixes) >= GENERATION_SEEDS[0]:
