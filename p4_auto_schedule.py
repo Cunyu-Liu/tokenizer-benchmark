@@ -53,6 +53,12 @@ REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
 # and other-user processes are touched. Already-running jobs are not killed.
 MAX_PER_GPU = 3             # stack up to 3 our-runs per GPU where memory fits (owner: GPU1/2/4 stacking)
 MAX_CONCURRENT = 16         # fill available GPU-memory slots toward 33 runs
+# Owner directive (2026-08-20): AFTER the core 33-run matrix (Track R 10x3 +
+# B1 x3) is fully closed, subsequent training must use AT MOST 3 physical GPUs
+# (whichever cards are free at dispatch time), freeing the rest for codec
+# evaluation / other work. This cap only activates post-closure; during
+# closure it does NOT reduce the fill-toward-33 concurrency above.
+POST_CLOSURE_MAX_GPUS = 3
 
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
@@ -129,15 +135,24 @@ def _our_gpu_pids() -> dict:
     return gpu_of_pid
 
 
-def free_gpus() -> list[dict]:
+def free_gpus(max_gpus: int | None = None) -> list[dict]:
     """Return candidate GPU placements, one entry per usable run slot.
 
     V3 Appendix B (2026-08-19): GPUs are not shared, so each non-MIG GPU has
     at most one our-run; a GPU is usable for a new run if it currently hosts
     zero our-runs and has enough free memory. Legacy mRNA_editflow processes
     are ignored (kept running per owner).
+
+    When `max_gpus` is given (post-closure), at most that many DISTINCT
+    physical GPUs may host our runs: placements are only allowed on a card if
+    it already hosts a run OR the distinct-card count would stay <= max_gpus.
+    This frees the rest of the hardware for other work, regardless of which
+    specific cards are free ("先空闲先用").
     """
     our_gpus = _our_gpu_pids()
+    # Cards already hosting our runs count toward the distinct-card budget and
+    # grow as placements are allowed, so the cap is enforced across the loop.
+    active = {i for i, pids in our_gpus.items() if pids}
     cands = []
     for g in gpu_table():
         if g["mig"]:
@@ -145,6 +160,9 @@ def free_gpus() -> list[dict]:
         our_n = len(our_gpus.get(g["index"], ()))
         if our_n >= MAX_PER_GPU:
             continue
+        if max_gpus is not None:
+            if g["index"] not in active and len(active) >= max_gpus:
+                continue
         # free memory must accommodate the next run on top of current usage
         if g["free"] >= REQ_MEM_MiB:
             entry = dict(g)
@@ -152,6 +170,8 @@ def free_gpus() -> list[dict]:
             entry["slots"] = min(MAX_PER_GPU - our_n,
                                  g["free"] // REQ_MEM_MiB)
             cands.append(entry)
+            if max_gpus is not None:
+                active.add(g["index"])
     # Prefer cards with more free slots, tie-break by index.
     cands.sort(key=lambda e: (-e["slots"], e["index"]))
     return cands
@@ -232,6 +252,18 @@ def running_count(existing: dict) -> int:
     return sum(1 for st in existing.values() if st in ("RUNNING", "RUNNING_PRE_MANIFEST"))
 
 
+def core_closed(existing: dict) -> bool:
+    """True once the core 33-run matrix needs no further runs.
+
+    Closure means no (arm, seed) in the 33-cell core is needed AND none is
+    running. After this point the post-closure 3-GPU training cap takes over
+    for any subsequent dispatch (e.g. re-runs or later-track training), and
+    free_gpus() is restricted to at most POST_CLOSURE_MAX_GPUS cards.
+    """
+    return (len(build_priority_queue(existing)) == 0
+            and running_count(existing) == 0)
+
+
 def launch(arm: str, seed: int, gpu: int) -> None:
     ts = time.strftime("%Y%m%dT%H%M%S")
     out_dir = f"{RUNS}/phase4_{arm}_s{seed}_{ts}"
@@ -248,11 +280,15 @@ def launch(arm: str, seed: int, gpu: int) -> None:
 
 def one_pass(dry_run: bool = False) -> int:
     existing = existing_run_statuses()
-    free = free_gpus()
     running = running_count(existing)
     needed = build_priority_queue(existing)
+    closed = core_closed(existing)
+    # Post-closure owner cap: after the core 33-run matrix closes, restrict
+    # subsequent training to at most POST_CLOSURE_MAX_GPUS cards (先空闲先用).
+    free = free_gpus(max_gpus=POST_CLOSURE_MAX_GPUS if closed else None)
 
-    log("pass: running=%d free_placements=%d needed=%d" % (running, len(free), len(needed)))
+    log("pass: running=%d free_placements=%d needed=%d closed=%s" % (
+        running, len(free), len(needed), closed))
     for (arm, seed) in needed:
         log("  pending %s s%d" % (arm, seed))
 
