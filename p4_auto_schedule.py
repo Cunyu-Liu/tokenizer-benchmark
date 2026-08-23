@@ -60,6 +60,14 @@ MAX_CONCURRENT = 16         # fill available GPU-memory slots toward 33 runs
 # closure it does NOT reduce the fill-toward-33 concurrency above.
 POST_CLOSURE_MAX_GPUS = 3
 
+# Owner directive (2026-08-20, updated immediately): training is RESTRICTED to
+# these GPU cards only; every other non-MIG card is reserved exclusively for
+# evaluation / other work and must never be used for p4 training dispatch.
+# To release 3 cards immediately, GPU0/3/5 were taken offline for training and
+# GPU1/2/4 remain the sole training pool. The scheduler will never place a new
+# training run on a card outside this allowlist.
+TRAIN_GPU_ALLOWLIST = {1, 2, 4}
+
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
 # Priority: within a seed, F7/P2/P3 first (still pending), then B1 bridge,
@@ -156,6 +164,10 @@ def free_gpus(max_gpus: int | None = None) -> list[dict]:
     cands = []
     for g in gpu_table():
         if g["mig"]:
+            continue
+        # Exclusive-evaluation reservation: never dispatch training on cards
+        # outside the allowlist (they are reserved for codec/other work).
+        if g["index"] not in TRAIN_GPU_ALLOWLIST:
             continue
         our_n = len(our_gpus.get(g["index"], ()))
         if our_n >= MAX_PER_GPU:

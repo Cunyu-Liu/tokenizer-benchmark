@@ -56,8 +56,8 @@ def test_free_gpus_cap_limits_distinct_cards(monkeypatch):
 
 
 def test_free_gpus_no_cap_without_max(monkeypatch):
-    """Without max_gpus (closure not done), all free cards get placements."""
-    cards = [_gpu(0), _gpu(1), _gpu(2), _gpu(3)]
+    """Without max_gpus (closure not done), all ALLOWLISTED free cards get slots."""
+    cards = [_gpu(0), _gpu(1), _gpu(2), _gpu(3), _gpu(4), _gpu(5)]
 
     def fake_table():
         return cards
@@ -66,22 +66,25 @@ def test_free_gpus_no_cap_without_max(monkeypatch):
     monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {})
 
     free = ps.free_gpus()
-    assert len(free) == 4
+    distinct = {c["index"] for c in free}
+    # allowlist = {1,2,4}; outside cards are eval-reserved and never used.
+    assert distinct <= ps.TRAIN_GPU_ALLOWLIST
+    assert distinct == {1, 2, 4}
 
 
 def test_free_gpus_cap_reuses_active_cards(monkeypatch):
-    """A card already hosting a run is counted first; new cards fill to cap."""
-    cards = [_gpu(0), _gpu(1), _gpu(2), _gpu(3), _gpu(4)]
+    """An in-allowlist active card is counted first; new cards fill to cap."""
+    cards = [_gpu(0), _gpu(1), _gpu(2), _gpu(3), _gpu(4), _gpu(5)]
 
     def fake_table():
         return cards
 
-    # GPU 0, 1 already host runs.
+    # GPU 1 (in-allowlist) already hosts a run; GPU0 is eval-reserved.
     monkeypatch.setattr(ps, "gpu_table", fake_table)
-    monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {0: {111}, 1: {222}})
+    monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {1: {222}})
 
     free = ps.free_gpus(max_gpus=3)
     distinct = {c["index"] for c in free}
-    # active 0,1 + one new card = 3 distinct
+    # active 1 (in allowlist) + 2 + 4 = 3 distinct, all within allowlist
     assert len(distinct) == 3
-    assert 0 in distinct and 1 in distinct
+    assert distinct == {1, 2, 4}
