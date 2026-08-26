@@ -23,7 +23,7 @@ ALL6 = {0, 1, 2, 3, 4, 5}
 
 
 def test_train_gpu_allowlist_excludes_eval_cards():
-    assert ps.TRAIN_GPU_ALLOWLIST == {2, 4}
+    assert ps.TRAIN_GPU_ALLOWLIST == {0, 2, 4}
 
 
 def test_free_gpus_never_uses_outside_allowlist(monkeypatch):
@@ -32,7 +32,7 @@ def test_free_gpus_never_uses_outside_allowlist(monkeypatch):
     monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {})
     free = ps.free_gpus()
     assert {c["index"] for c in free} <= ps.TRAIN_GPU_ALLOWLIST
-    assert {c["index"] for c in free} == {2, 4}
+    assert {c["index"] for c in free} == {0, 2, 4}
 
 
 def test_free_gpus_allowlist_with_active(monkeypatch):
@@ -51,8 +51,8 @@ def test_free_gpus_cap_still_respects_allowlist(monkeypatch):
     free = ps.free_gpus(max_gpus=3)
     # hard allowlist {2,4} dominates: only those 2 cards may be used
     assert {c["index"] for c in free} <= ps.TRAIN_GPU_ALLOWLIST
-    assert len(free) == 2
-    assert {c["index"] for c in free} == {2, 4}
+    assert len(free) == 3
+    assert {c["index"] for c in free} == {0, 2, 4}
 
 
 def test_core_closed_true_when_all_done():

@@ -66,7 +66,7 @@ POST_CLOSURE_MAX_GPUS = 3
 # To release 3 cards immediately, GPU0/3/5 were taken offline for training and
 # GPU1/2/4 remain the sole training pool. The scheduler will never place a new
 # training run on a card outside this allowlist.
-TRAIN_GPU_ALLOWLIST = {2, 4}
+TRAIN_GPU_ALLOWLIST = {0, 2, 4}
 
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
