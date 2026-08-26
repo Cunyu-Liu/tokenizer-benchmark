@@ -20,7 +20,9 @@ from collections import Counter
 
 ARMS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "P1", "P2", "P3", "B1"]
 SEEDS = [17, 29, 43]
-RUN_RE = re.compile(r"^phase4_(F[1-7]|P[1-3]|B1)_s(\d+)_\d{8}T\d{6}")
+RUN_RE = re.compile(
+    r"^phase4_(F[1-7]|P[1-3]|B1)_s(\d+)_\d{8}T\d{6}(?:_restart)?$"
+)
 DEFAULT_RUNS = "/mnt/cunyuliu/tokenizer-benchmark/runs"
 
 
@@ -38,7 +40,7 @@ def scan(runs_dir: str) -> dict:
     best = {}
     for d in sorted(__import__("os").listdir(runs_dir)):
         m = RUN_RE.match(d)
-        if not m or "_restart" in d:
+        if not m:
             continue
         import os
         mf = os.path.join(runs_dir, d, "manifest.json")
@@ -48,16 +50,18 @@ def scan(runs_dir: str) -> dict:
             man = json.load(fh)
         key = (m.group(1), int(m.group(2)))
         st = man.get("status")
-        if st and best.get(key) != "DONE":
-            # keep DONE over conflicting stale; prefer highest final_nt within
+        if st:
+            entry = {
+                "status": st, "final_nt": man.get("final_nt"),
+                "best_val_loss": man.get("best_val_loss"),
+                "throughput_nt_s": man.get("throughput_nt_s"),
+                "best_checkpoint": man.get("best_checkpoint"),
+            }
             prev = best.get(key)
-            if prev not in (None, "DONE") or st == "DONE":
-                best[key] = {
-                    "status": st, "final_nt": man.get("final_nt"),
-                    "best_val_loss": man.get("best_val_loss"),
-                    "throughput_nt_s": man.get("throughput_nt_s"),
-                    "best_checkpoint": man.get("best_checkpoint"),
-                }
+            # A completed corrected retry is the accepted bundle for the cell;
+            # later stale/failure manifests must not overwrite a DONE result.
+            if prev is None or (st == "DONE" and prev["status"] != "DONE"):
+                best[key] = entry
     rows = []
     for a in ARMS:
         for s in SEEDS:

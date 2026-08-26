@@ -33,24 +33,28 @@ import pyarrow.parquet as pq
 
 from evaluator.codec_scoring import calibration_bpns
 
-RUN_RE = re.compile(r"^phase4_(F[1-7]|P[1-3]|B1)_s(\d+)_\d{8}T\d{6}$")
+RUN_RE = re.compile(
+    r"^phase4_(F[1-7]|P[1-3]|B1)_s(\d+)_\d{8}T\d{6}(?:_restart)?$"
+)
 DEFAULT_RUNS = "/mnt/cunyuliu/tokenizer-benchmark/runs"
 DEFAULT_SPLIT = "/mnt/cunyuliu/tokenizer-benchmark/data/derived/split/release22_split_8080.parquet"
 
 
 def discover_done(runs_dir: str) -> list[tuple[str, int, str]]:
-    """(arm, seed, final_checkpoint) for every DONE (non-restart) run cell.
+    """(arm, seed, final_checkpoint) for every accepted DONE run cell.
 
     The final checkpoint is the LAST validated checkpoint in the manifest's
     ``checkpoints`` list (budget-adjacent final-budget checkpoint; Phase-4
     training breaks at the 2.0B budget before saving a 2.0B val checkpoint, so
     this is the last saved ~1.9-1.999B state, deterministic and consistent
-    across arms).
+    across arms). Corrected-retry directories are valid when their manifest is
+    DONE. If more than one DONE bundle exists for a cell, prefer the bundle
+    with the furthest checkpoint, then the later timestamped directory.
     """
-    out = []
+    best: dict[tuple[str, int], tuple[float, str, str]] = {}
     for d in sorted(os.listdir(runs_dir)):
         m = RUN_RE.match(d)
-        if not m or "_restart" in d:
+        if not m:
             continue
         mf = os.path.join(runs_dir, d, "manifest.json")
         if not os.path.isfile(mf):
@@ -65,7 +69,15 @@ def discover_done(runs_dir: str) -> list[tuple[str, int, str]]:
         ckpt = cks[-1].get("path")
         if not ckpt:
             continue
-        out.append((m.group(1), int(m.group(2)), ckpt))
+        nt = cks[-1].get("nt")
+        rank_nt = float(nt) if isinstance(nt, (int, float)) else -1.0
+        key = (m.group(1), int(m.group(2)))
+        candidate = (rank_nt, d, ckpt)
+        if key not in best or candidate[:2] > best[key][:2]:
+            best[key] = candidate
+
+    out = [(arm, seed, value[2])
+           for (arm, seed), value in best.items()]
     # deterministic sort by (arm, seed)
     arm_order = {"F1": 0, "F2": 1, "F3": 2, "F4": 3, "F5": 4, "F6": 5, "F7": 6,
                  "P1": 7, "P2": 8, "P3": 9, "B1": 10}
@@ -88,11 +100,21 @@ def run_one(arm: str, seed: int, ckpt: str, subsample: str, n: int,
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(dev)
     print("RUN", arm, "s%d" % seed, flush=True)
-    rc = subprocess.run(cmd, env=env, capture_output=True, text=True).returncode
+    proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    rc = proc.returncode
     result = None
     if rc == 0:
         with open(tmp) as fh:
             result = json.load(fh)
+    else:
+        # The table driver is normally redirected to a durable log. Surface
+        # the child diagnostics there instead of reducing failures to rc=1.
+        if proc.stderr:
+            print("  STDERR(%s s%d):" % (arm, seed),
+                  proc.stderr[-2000:], flush=True)
+        if proc.stdout:
+            print("  STDOUT(%s s%d):" % (arm, seed),
+                  proc.stdout[-1000:], flush=True)
     os.remove(tmp)
     return rc, result
 
