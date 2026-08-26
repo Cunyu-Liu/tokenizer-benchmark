@@ -15,6 +15,11 @@ OUT = ("/mnt/cunyuliu/tokenizer-benchmark/data/derived/"
 MOD = "data.temporal_chunk_search"
 
 
+def _has_running(procs: dict[int, subprocess.Popen]) -> bool:
+    """Whether any launched chunk process is still running."""
+    return any(proc.poll() is None for proc in procs.values())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-chunks", type=int, default=48)
@@ -26,7 +31,7 @@ def main() -> None:
     procs = {}
     next_i = 0
     done = set()
-    while next_i < args.n_chunks or any(p.poll() is None for p in procs):
+    while next_i < args.n_chunks or _has_running(procs):
         # launch until concurrency cap
         while next_i < args.n_chunks and len(procs) < args.runs and len(procs) < args.n_chunks:
             i = next_i; next_i += 1
