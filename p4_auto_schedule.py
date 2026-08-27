@@ -120,9 +120,32 @@ def gpu_table() -> list[dict]:
     return result
 
 
-def _our_gpu_pids() -> dict:
-    """Map physical GPU index -> set of our p4_train pids (via CUDA_VISIBLE_DEVICES)."""
+def _physical_gpu_for_process(pid: str, args: str) -> int | None:
+    """Resolve a p4_train process to its physical CUDA_VISIBLE_DEVICES card."""
     import re as _re
+
+    # Legacy timeout/bash wrappers expose the assignment in their command line.
+    mm = _re.search(r"CUDA_VISIBLE_DEVICES=(\d+)", args)
+    if mm:
+        return int(mm.group(1))
+
+    # Direct Python workers retain the assignment only in their environment.
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as fh:
+            env = fh.read().split(b"\0")
+    except OSError:
+        return None
+    for item in env:
+        if item.startswith(b"CUDA_VISIBLE_DEVICES="):
+            value = item.split(b"=", 1)[1].decode("ascii", errors="ignore")
+            return int(value) if value.isdigit() else None
+    return None
+
+
+def _our_gpu_pids() -> dict:
+    """Map physical GPU index -> set of our live p4_train pids."""
+    import re as _re
+
     gpu_of_pid = {}
     try:
         out = subprocess.run(
@@ -133,10 +156,9 @@ def _our_gpu_pids() -> dict:
                 continue
             pid = m.group(1)
             args = m.group(2)
-            # CUDA_VISIBLE_DEVICES=<gpu> prefix in the bash -lc wrapper
-            mm = _re.search(r"CUDA_VISIBLE_DEVICES=(\d+)", args)
-            if mm:
-                gpu_of_pid.setdefault(int(mm.group(1)), set()).add(pid)
+            gpu = _physical_gpu_for_process(pid, args)
+            if gpu is not None:
+                gpu_of_pid.setdefault(gpu, set()).add(pid)
     except Exception:
         pass
     return gpu_of_pid

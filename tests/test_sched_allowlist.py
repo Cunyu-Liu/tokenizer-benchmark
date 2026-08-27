@@ -1,4 +1,6 @@
 """Unit tests for p4_auto_schedule post-closure 3-GPU cap + train-GPU allowlist."""
+import builtins
+import io
 import os
 import sys
 
@@ -88,6 +90,18 @@ def test_launch_does_not_apply_wall_clock_timeout(monkeypatch, tmp_path):
     assert "p4_train.py --arm F6 --seed 43" in cmd
     assert kwargs["shell"] is True
     assert kwargs["check"] is True
+
+
+def test_direct_worker_gpu_mapping_reads_process_environment(monkeypatch):
+    environ = io.BytesIO(b"PATH=/usr/bin\0CUDA_VISIBLE_DEVICES=4\0")
+    monkeypatch.setattr(builtins, "open", lambda *_args, **_kwargs: environ)
+
+    gpu = ps._physical_gpu_for_process(
+        "1234",
+        "/test/python -u p4_train.py --arm F1 --seed 29",
+    )
+
+    assert gpu == 4
 
 
 # ---- cap-only tests decoupled from the hard allowlist ----
