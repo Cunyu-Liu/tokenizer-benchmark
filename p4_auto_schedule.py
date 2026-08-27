@@ -42,7 +42,6 @@ PYTHON = "/home/cunyuliu/miniconda3/envs/toktokenbench/bin/python"
 PROJ = "/home/cunyuliu/tokenizer-benchmark"
 RUNS = "/mnt/cunyuliu/tokenizer-benchmark/runs"
 AUTO_LOG = f"{RUNS}/phase4_auto.log"
-TIMEOUT_S = 650000
 FREE_MIN_MiB = 12000        # per-run minimum free memory to place a new run
 REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
 # Concurrency (owner re-authorized 2026-08-20): to close the core 33-run
@@ -283,7 +282,11 @@ def launch(arm: str, seed: int, gpu: int) -> None:
              f"--device 0 --out-dir {out_dir}")
     prefix = (f"cd {PROJ} && CUDA_VISIBLE_DEVICES={gpu} "
               f"PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ")
-    cmd = (f"nohup timeout {TIMEOUT_S} bash -lc {shlex.quote(prefix + inner)} "
+    # Phase-4 runs can legitimately take longer than a fixed wall-clock limit,
+    # especially when several jobs share a GPU.  p4_train.py has no resume
+    # mode, so an outer timeout would discard all progress and force a full
+    # restart.  Let the training budget terminate the run instead.
+    cmd = (f"nohup bash -lc {shlex.quote(prefix + inner)} "
            f">> {out_dir}/run.log 2>&1 &")
     os.makedirs(out_dir, exist_ok=True)
     subprocess.run(cmd, shell=True, check=True, cwd=PROJ)

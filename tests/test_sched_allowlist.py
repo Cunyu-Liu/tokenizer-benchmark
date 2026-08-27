@@ -66,6 +66,30 @@ def test_core_closed_false_when_running():
     assert ps.core_closed(ex) is False
 
 
+def test_launch_does_not_apply_wall_clock_timeout(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(ps, "RUNS", str(tmp_path / "runs"))
+    monkeypatch.setattr(ps, "PROJ", str(tmp_path))
+    monkeypatch.setattr(ps, "PYTHON", "/test/python")
+    monkeypatch.setattr(ps.time, "strftime", lambda _fmt: "20260827T120000")
+    monkeypatch.setattr(ps, "log", lambda _msg: None)
+    monkeypatch.setattr(
+        ps.subprocess,
+        "run",
+        lambda cmd, **kwargs: calls.append((cmd, kwargs)),
+    )
+
+    ps.launch("F6", 43, 2)
+
+    assert len(calls) == 1
+    cmd, kwargs = calls[0]
+    assert cmd.startswith("nohup bash -lc ")
+    assert "timeout" not in cmd
+    assert "p4_train.py --arm F6 --seed 43" in cmd
+    assert kwargs["shell"] is True
+    assert kwargs["check"] is True
+
+
 # ---- cap-only tests decoupled from the hard allowlist ----
 
 def test_free_gpus_cap_limits_distinct_cards(monkeypatch):
