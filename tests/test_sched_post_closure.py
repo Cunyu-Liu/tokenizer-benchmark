@@ -1,4 +1,4 @@
-"""Unit tests for p4_auto_schedule post-closure 3-GPU cap + train-GPU allowlist."""
+"""Unit tests for p4_auto_schedule post-closure single-GPU cap."""
 import os
 import sys
 
@@ -21,7 +21,7 @@ ALL6 = {0, 1, 2, 3, 4, 5}
 
 
 def test_post_closure_max_gpus_constant():
-    assert ps.POST_CLOSURE_MAX_GPUS == 3
+    assert ps.POST_CLOSURE_MAX_GPUS == 1
 
 
 def test_core_closed_false_when_empty():
@@ -66,5 +66,5 @@ def test_free_gpus_cap_reuses_active_cards(monkeypatch):
     monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {0: {111}, 1: {222}})
     free = ps.free_gpus(max_gpus=3)
     distinct = {c["index"] for c in free}
-    assert len(distinct) == 3
-    assert 0 in distinct and 1 in distinct
+    assert len(distinct) == 1
+    assert distinct.isdisjoint({0, 1})

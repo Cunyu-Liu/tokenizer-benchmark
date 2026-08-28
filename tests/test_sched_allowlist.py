@@ -1,4 +1,4 @@
-"""Unit tests for p4_auto_schedule post-closure 3-GPU cap + train-GPU allowlist."""
+"""Unit tests for p4_auto_schedule single-GPU cap + train-GPU allowlist."""
 import builtins
 import io
 import os
@@ -26,6 +26,12 @@ ALL6 = {0, 1, 2, 3, 4, 5}
 
 def test_train_gpu_allowlist_excludes_eval_cards():
     assert ps.TRAIN_GPU_ALLOWLIST == {0, 2, 4}
+
+
+def test_owner_training_limits_are_single_job_single_gpu():
+    assert ps.MAX_CONCURRENT == 1
+    assert ps.MAX_PER_GPU == 1
+    assert ps.POST_CLOSURE_MAX_GPUS == 1
 
 
 def test_free_gpus_never_uses_outside_allowlist(monkeypatch):
@@ -66,6 +72,29 @@ def test_core_closed_false_when_running():
     ex = {(a, s): "DONE" for a in ps.ARMS for s in ps.SEEDS}
     ex[(ps.ARMS[0], ps.SEEDS[0])] = "RUNNING"
     assert ps.core_closed(ex) is False
+
+
+def test_one_pass_does_not_backfill_until_all_existing_workers_finish(monkeypatch):
+    existing = {(ps.ARMS[0], ps.SEEDS[0]): "RUNNING"}
+    launches = []
+    monkeypatch.setattr(ps, "existing_run_statuses", lambda: existing)
+    monkeypatch.setattr(ps, "free_gpus", lambda max_gpus=None: [_gpu(0), _gpu(2)])
+    monkeypatch.setattr(ps, "launch", lambda arm, seed, gpu: launches.append((arm, seed, gpu)))
+    monkeypatch.setattr(ps, "log", lambda _msg: None)
+
+    assert ps.one_pass() == 0
+    assert launches == []
+
+
+def test_one_pass_launches_only_one_worker_after_drain(monkeypatch):
+    launches = []
+    monkeypatch.setattr(ps, "existing_run_statuses", lambda: {})
+    monkeypatch.setattr(ps, "free_gpus", lambda max_gpus=None: [_gpu(0), _gpu(2), _gpu(4)])
+    monkeypatch.setattr(ps, "launch", lambda arm, seed, gpu: launches.append((arm, seed, gpu)))
+    monkeypatch.setattr(ps, "log", lambda _msg: None)
+
+    assert ps.one_pass() == 1
+    assert len(launches) == 1
 
 
 def test_launch_does_not_apply_wall_clock_timeout(monkeypatch, tmp_path):
@@ -124,8 +153,8 @@ def test_free_gpus_cap_reuses_active_cards(monkeypatch):
     monkeypatch.setattr(ps, "_our_gpu_pids", lambda: {0: {111}, 1: {222}})
     free = ps.free_gpus(max_gpus=3)
     distinct = {c["index"] for c in free}
-    assert len(distinct) == 3
-    assert 0 in distinct and 1 in distinct
+    assert len(distinct) == 1
+    assert distinct.isdisjoint({0, 1})
 
 
 def test_free_gpus_no_cap_without_max(monkeypatch):

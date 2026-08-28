@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Phase 4 automatic run scheduler (V3 Appendix B: <=2 exclusive GPU jobs).
+"""Phase 4 automatic run scheduler (owner limit: one training GPU at a time).
 
 Dispatches Phase 4 core science runs (Track R 10 arms x 3 seeds + B1 bridge
-3 seeds = 33 runs) in a fixed priority order, limited to at most 2 exclusive
-GPU jobs in parallel (V3 Appendix B; GPUs are not shared).
+3 seeds = 33 runs) in a fixed priority order.  The owner directive dated
+2026-08-28 keeps the already-running workers alive, forbids replacement
+launches until all of them finish, and then permits at most one training job
+on one physical GPU at any time.
 
 History: a 2026-08-15 '6 concurrent' and 2026-08-17 '9 concurrent stacking'
 deviation were approved under Goal V2. Goal V3 (2026-08-19) rescinds both back
@@ -44,20 +46,14 @@ RUNS = "/mnt/cunyuliu/tokenizer-benchmark/runs"
 AUTO_LOG = f"{RUNS}/phase4_auto.log"
 FREE_MIN_MiB = 12000        # per-run minimum free memory to place a new run
 REQ_MEM_MiB = 18000         # estimated peak VRAM per 100M run (conservative)
-# Concurrency (owner re-authorized 2026-08-20): to close the core 33-run
-# Phase-4 matrix (16 cells pending incl. the B1 bridge x3), allow up to 2
-# our-runs per GPU stacked where free memory >= REQ_MEM_MiB, up to
-# MAX_CONCURRENT total. This supersedes the V3 Appendix B 'max 2 exclusive'
-# cap for Phase 4 closure. The free_gpus() memory gate prevents OOM; legacy
-# and other-user processes are touched. Already-running jobs are not killed.
-MAX_PER_GPU = 3             # stack up to 3 our-runs per GPU where memory fits (owner: GPU1/2/4 stacking)
-MAX_CONCURRENT = 16         # fill available GPU-memory slots toward 33 runs
-# Owner directive (2026-08-20): AFTER the core 33-run matrix (Track R 10x3 +
-# B1 x3) is fully closed, subsequent training must use AT MOST 3 physical GPUs
-# (whichever cards are free at dispatch time), freeing the rest for codec
-# evaluation / other work. This cap only activates post-closure; during
-# closure it does NOT reduce the fill-toward-33 concurrency above.
-POST_CLOSURE_MAX_GPUS = 3
+# Owner directive (2026-08-28): do not interrupt the workers that were already
+# running when this limit was applied.  Because their count is currently above
+# MAX_CONCURRENT, one_pass() cannot backfill a freed slot; it waits until the
+# final pre-existing worker exits.  From then on, at most one training process
+# can run globally, so at most one physical GPU is used for training.
+MAX_PER_GPU = 1
+MAX_CONCURRENT = 1
+POST_CLOSURE_MAX_GPUS = 1
 
 # Owner directive (2026-08-20, updated immediately): training is RESTRICTED to
 # these GPU cards only; every other non-MIG card is reserved exclusively for
