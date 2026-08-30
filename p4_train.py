@@ -15,6 +15,9 @@ GPU-only: device must be cuda; cpu_fallback_count must stay 0 everywhere.
 Usage:
   python p4_train.py --arm F1 --seed 17 --device 0 --out-dir /mnt/.../P4_F1_s17
   python p4_train.py --arm P3 --seed 17 --device 2 --out-dir /mnt/.../P4_P3_s17
+  # Track L2 Stage A (approved 2026-08-30; NOT in 33-run; single-GPU rule):
+  python p4_train.py --arm L2_ENTROPY --seed 101 --device 0 \
+      --out-dir /mnt/cunyuliu/tokenizer-benchmark/runs/l2_L2_ENTROPY_s101_T --smoke-nt 500000000
 """
 from __future__ import annotations
 
@@ -50,9 +53,11 @@ def _device(dev) -> str:
 
 def entropy_calib_for_arm(arm_id: str, device: str) -> EntropyCalib | None:
     """Train-only entropy calibration for BLT arms P1/P2/P3 (deterministic)."""
-    if arm_id not in ("P1", "P2", "P3"):
+    l2 = arm_id.startswith("L2_")
+    if not l2 and arm_id not in ("P1", "P2", "P3"):
         return None
-    return calibrate_entropy(SPLIT_8080, device=device, target_patch_len=8,
+    return calibrate_entropy(SPLIT_8080, device=device,
+                             target_patch_len=6 if l2 else 8,
                              seed=17, budget_nt=ENTROPY_BUDGET_NT, batch_size=256)
 
 
@@ -144,7 +149,7 @@ def run_single(arm_id: str, seed: int, device: str, out_dir: str,
             g["lr"] = lr_at(cumulative_nt)
         model.train()
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-            if cfg.arm.backbone == "blt":
+            if cfg.arm.backbone in ("blt", "l2"):
                 if gpu_policy is not None:
                     bnd = gpu_policy.boundaries_batch(tok)
                 else:

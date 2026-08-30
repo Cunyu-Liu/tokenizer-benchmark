@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .arms import ArmSpec, ARMS_100M, ARMS_350M, SEEDS
-from .backbone import FlatCausalLM, BLTCausalLM
+from .arms import ArmSpec, ARMS_100M, ARMS_350M, ARMS_L2, SEEDS
+from .backbone import FlatCausalLM, BLTCausalLM, PatchInputFlatCausalLM
 from .census import count_params
 
 # Contract 3.4 constants
@@ -244,6 +244,12 @@ def build_model(cfg: RunConfig):
             n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
             max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
             tied_embed=cfg.embed.tied)
+    if cfg.arm.backbone == "l2":
+        return PatchInputFlatCausalLM(
+            vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
+            n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
+            max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
+            tied_embed=cfg.embed.tied)
     if cfg.arm.backbone == "blt":
         return BLTCausalLM(
             vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
@@ -288,7 +294,7 @@ def lr_tuning_candidates(cfg: RunConfig) -> list[float]:
 
 
 def arm_(id_: str) -> ArmSpec:
-    for a in ARMS_100M + ARMS_350M:
+    for a in ARMS_100M + ARMS_350M + ARMS_L2:
         if a.id == id_:
             return a
     raise KeyError(id_)

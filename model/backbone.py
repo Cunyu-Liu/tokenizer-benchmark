@@ -234,3 +234,47 @@ class BLTCausalLM(nn.Module):
                 per_nt.view(-1, per_nt.size(-1)), targets.view(-1),
                 ignore_index=-100)
         return per_nt, loss
+
+class PatchInputFlatCausalLM(FlatCausalLM):
+    """L2 pilot (approved amendment 2026-08-30, Track L2 Stage A).
+
+    SAME Flat trunk / embedding / head as FlatCausalLM (this is a subclass with
+    no added modules, so trainable parameters are bit-for-bit identical to the
+    F1 static-token arm). The only difference is INPUT resolution: the sequence
+    is folded into variable-length patches whose mean nucleotide embeddings are
+    fed to the trunk, i.e. dynamic segmentation input on one Flat backbone.
+    Boundaries come from a PatchPolicy (fixed / random / entropy) at call time.
+    """
+
+    def _segments(self, nt_ids, boundary):
+        B, T = nt_ids.shape
+        starts = (boundary > 0.5).long()
+        starts[:, 0] = 1
+        return torch.cumsum(starts, dim=1) - 1
+
+    def forward(self, nt_ids, boundary, targets=None):
+        B, T = nt_ids.shape
+        seg = self._segments(nt_ids, boundary)
+        mask = F.one_hot(seg, num_classes=seg.max() + 1).permute(0, 2, 1).float()
+        seq_emb = self.embed_head.embed(nt_ids)     # B,T,emb_dim
+        patch_emb = mask @ seq_emb                  # B,n_patch,emb_dim (mean pool)
+        patch_emb = self.embed_head.up(patch_emb)   # B,n_patch,d_model
+        n_patch = patch_emb.size(1)
+        x = patch_emb + self.pos_emb[:, :n_patch, :]
+        for blk in self.blocks:
+            if self.use_checkpoint and self.training:
+                x = ckpt(blk, x, use_reentrant=False)
+            else:
+                x = blk(x)
+        x = self.ln_f(x)
+        h = self.embed_head.down(x)                 # B,n_patch,emb_dim
+        logits_patch = self.embed_head.head(h)      # B,n_patch,vocab
+        vocab = logits_patch.size(-1)
+        per_nt = torch.gather(
+            logits_patch, 1, seg.unsqueeze(-1).expand(-1, -1, vocab))  # B,T,vocab
+        loss = None
+        if targets is not None:
+            loss = F.cross_entropy(
+                per_nt.view(-1, per_nt.size(-1)), targets.view(-1),
+                ignore_index=-100)
+        return per_nt, loss

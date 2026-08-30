@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 
 from .arms import ArmSpec
-from .backbone import FlatCausalLM, BLTCausalLM
+from .backbone import FlatCausalLM, BLTCausalLM, PatchInputFlatCausalLM
 from .census import GPUGuard, count_params
 from .dataset import (
     IGNORE, Exposure, build_tokenizer, count_valid_nt, iter_train_batches,
@@ -34,6 +34,12 @@ def build_model_for_cfg(cfg, device: str):
     guard.check()  # raises on cpu
     if cfg.arm.backbone == "flat":
         m = FlatCausalLM(
+            vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
+            n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
+            max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
+            tied_embed=cfg.embed.tied)
+    elif cfg.arm.backbone == "l2":
+        m = PatchInputFlatCausalLM(
             vocab_size=cfg.arm.vocab_size, d_model=cfg.arch.d_model,
             n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
             max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
@@ -58,7 +64,7 @@ def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
     fitted policy is supplied, falling back to the distribution-matched random
     for dev-only smoke tests; P3 uses the fitted entropy predictor + gate.
     """
-    if cfg.arm.backbone != "blt":
+    if cfg.arm.backbone not in ("blt", "l2"):
         return None
     t = cfg.arm.tokenizer_type
     if t == "fixed_patch":
@@ -152,7 +158,7 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
             g["lr"] = lr_at(expo.cumulative_valid_target_nt)
         model.train()
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-            if cfg.arm.backbone == "blt":
+            if cfg.arm.backbone in ("blt", "l2"):
                 if gpu_policy is not None:
                     bnd = gpu_policy.boundaries_batch(tok)
                 else:
@@ -238,7 +244,7 @@ def validate_on_split(cfg, model, data_path, device="cuda:0",
         for batch in gen:
             tok = _tensor(batch, device, "token_ids")
             tgt = _tensor(batch, device, "targets")
-            if cfg.arm.backbone == "blt":
+            if cfg.arm.backbone in ("blt", "l2"):
                 if gpu_policy is not None:
                     bnd = gpu_policy.boundaries_batch(tok)
                 else:

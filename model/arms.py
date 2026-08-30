@@ -54,11 +54,24 @@ ARMS_350M: list[ArmSpec] = [
     ArmSpec("C4", "blt", "entropy_patch", 4, None, None, "entropy-patch BLT"),
 ]
 
+
+# L2 pilot arms (approved amendment 2026-08-30, Stage A): same Flat trunk,
+# patch-level input (dynamic segmentation). NOT part of the 33-run core and
+# NOT dispatched by the core scheduler/ledger.
+ARMS_L2: list[ArmSpec] = [
+    ArmSpec("L2_FIXED", "l2", "fixed_patch", 4, None, None,
+            "L2 pilot: Flat trunk + fixed patch input (patch_len = calib mean)"),
+    ArmSpec("L2_RANDOM", "l2", "random_patch", 4, None, None,
+            "L2 pilot: Flat trunk + matched-random patch input (dev fallback dist)"),
+    ArmSpec("L2_ENTROPY", "l2", "entropy_patch", 4, None, None,
+            "L2 pilot: Flat trunk + causal-entropy patch input"),
+]
+
 SEEDS = [17, 29, 43]
 
 
 def arm(id_: str) -> ArmSpec:
-    for a in ARMS_100M + ARMS_350M:
+    for a in ARMS_100M + ARMS_350M + ARMS_L2:
         if a.id == id_:
             return a
     raise KeyError(id_)

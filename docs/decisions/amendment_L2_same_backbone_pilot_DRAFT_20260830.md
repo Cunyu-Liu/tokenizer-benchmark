@@ -3,7 +3,7 @@
 - **类型**:PROSPECTIVE_AMENDMENT_DRAFT(未批准;批准后方生效)
 - **日期**:2026-08-30
 - **作者**:刘存宇(owner)
-- **状态**:PENDING_OWNER_APPROVAL
+- **状态**:APPROVED_BY_OWNER（2026-08-30）
 - **关联**:
   - 决策记录:`docs/decisions/20260830_blt_framing_and_external_registry.md`
   - 任务队列登记:`docs/data/track_l2_same_backbone_pilot_registration_20260830.json`
