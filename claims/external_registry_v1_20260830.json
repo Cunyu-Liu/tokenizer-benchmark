@@ -1,0 +1,18 @@
+{
+ "registry": "TokBench-RNA Phase 8 external reference systems (v1)",
+ "date": "2026-08-30",
+ "authority": "Goal V3 §3.8 / §4 Phase 8 (reference-only channel; NOT into main tables or Decision Map)",
+ "gate": "scored once at Phase 8 one-shot unseal with frozen query manifests",
+ "rules": [
+  "reference_only: entries appear in external reference panels, never in main-table attribution or Decision Map entries",
+  "same_backbone_control must be false for all external entries (cannot retrain under our unified data/exposure/FLOP budget)",
+  "adapter_status transitions PLANNED -> READY must pass evaluator adapter tests and protocols/evaluator_protocol.yaml"
+ ],
+ "entries": [
+  {"id": "PatchDNA", "architecture_family": "blt_like", "patching_mechanism": "conservation/entropy-guided patching + re-patching", "code_weights": "TBC", "adapter_status": "PLANNED", "entry_mode": "reference_only", "same_backbone_control": false, "constraint_note": "no unified-budget retraining possible; DNA domain; ICLR 2026"},
+  {"id": "H-Net_dnaHNet", "architecture_family": "hnet_like", "patching_mechanism": "learned differentiable dynamic chunking", "code_weights": "goombalab/hnet; dnaHNet UNKNOWN_VERIFY", "adapter_status": "PLANNED", "entry_mode": "reference_only", "same_backbone_control": false, "constraint_note": "cross-family reference; genomics/dna domain"},
+  {"id": "MergeDNA", "architecture_family": "blt_like(learnable merging)", "patching_mechanism": "dynamic token merging", "code_weights": "UNKNOWN_VERIFY", "adapter_status": "PLANNED", "entry_mode": "reference_only", "same_backbone_control": false, "constraint_note": "learnable segmenter, joint objective with latent transformer"},
+  {"id": "DNAChunker", "architecture_family": "flat+learned_seg", "patching_mechanism": "RL-learned adaptive segmentation", "code_weights": "UNKNOWN_VERIFY", "adapter_status": "PLANNED", "entry_mode": "reference_only", "same_backbone_control": false, "constraint_note": "masked (non-AR) DNA"},
+  {"id": "BLT_text_1B_7B", "architecture_family": "blt_like", "patching_mechanism": "entropy patching", "code_weights": "facebook/blt-1b, blt-7b (CC-BY-NC-4.0)", "adapter_status": "PLANNED", "entry_mode": "reference_only", "same_backbone_control": false, "constraint_note": "text-domain weights, nucleic-acid adaptation limited; reference only"}
+ ]
+}

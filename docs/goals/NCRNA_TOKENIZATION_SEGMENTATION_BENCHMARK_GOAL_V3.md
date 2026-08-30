@@ -24,6 +24,7 @@
 | 2026-08-19 | §1.4/3.1/Phase 1 | Data release version | release-22 training anchor unchanged; release 23–27 shift (release-27 composition audit added, ~10M new sequences incl. circRNA/mirtron). |
 | 2026-08-19 | §1.6/3.2.2 | Variable-length controls | Registered Track L (learned causal dynamic chunking, PILOT_ONLY_NOT_IN_CORE_51) and BIO-DIAG (conservation/structure-guided patching, oracle/diagnostic); neither blocks the core. |
 | 2026-08-19 | §1.7/3.5/3.8 | BiomBenchmark-inspired design | Scenario matrix, MethodProfileCard, simple baselines, low-resource/efficiency stress, unified RNAARAdapter/result parser, time-to-quality. |
+| 2026-08-30 | §3.8 / Phase 8 | BLT framing + external reference registry | BLT treated as a reproducible instance of the blt_like patching-latent-transformer family; PatchDNA / H-Net (dnaHNet) / MergeDNA / DNAChunker registered as Phase-8 reference-only external systems; H-Net venue corrected to dnaHNet ICML 2026 Spotlight. Evidence: docs/decisions/20260830_blt_framing_and_external_registry.md; claims/collision_matrix_v3_20260830.json; claims/external_registry_v1_20260830.json. Owner-approved 2026-08-30. No gates or acceptance thresholds changed. |
 
 ---
 
