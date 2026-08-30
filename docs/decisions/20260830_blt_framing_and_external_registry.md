@@ -42,3 +42,4 @@
 - claims/external_registry_v1_20260830.json(Phase 8 参考系统注册)
 - Goal V3 Amendment Log 追加行;SHA-256 重算并同步 GOAL.md 与 AUTHORITY
 - PPT 第 4/6/13 页叙事与来源更新
+- docs/data/track_l2_same_backbone_pilot_registration_20260830.json（Track L2 同骨干动态分段输入 pilot，PENDING_OWNER_AMENDMENT，见“任务队列”）
