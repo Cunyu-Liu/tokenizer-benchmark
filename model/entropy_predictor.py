@@ -187,7 +187,7 @@ def train_entropy_predictor(
 def calibrate_entropy(
     data_path: str,
     device: str = "cuda:0",
-    target_patch_len: int = 8,
+    target_patch_len: int = 6,  # contract 3.2
     seed: int = 0,
     budget_nt: int = 2_000_000,
     batch_size: int = 256,

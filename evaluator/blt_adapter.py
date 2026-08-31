@@ -115,7 +115,10 @@ class InternalBLTAdapter(RNAARAdapter):
         """Per-position boundary (0/1) over the nt prefix, replaying training."""
         t = self.arm_type
         if t == "fixed_patch":
-            plen = int(round(self._calib.mean_patch_len)) if self._calib.mean_patch_len else 8
+            if self.arm.id == "B1":
+                plen = 1  # contract 3.2.1 bridge: patch-size=1 (matches train.py)
+            else:
+                plen = 6  # contract 3.2 fixed-6 (owner 2026-08-31); matches train.py
             return [1 if i % max(1, plen) == 0 else 0 for i in range(len(canon))]
         if t == "random_patch":
             if not self._calib.length_dist:

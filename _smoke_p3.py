@@ -54,7 +54,7 @@ def main():
     assert res["steps"] > 0 and res["cpu_fallback_count"] == 0
 
     # --- P3 entropy calibration + entropy-patch training smoke ---
-    calib = calibrate_entropy(PARQUET, device=dev, target_patch_len=8, seed=17,
+    calib = calibrate_entropy(PARQUET, device=dev, target_patch_len=6, seed=17,
                               budget_nt=200_000, batch_size=64)
     print("CALIB gate=%.4f mean_patch_len=%.3f pred_params=%d hash=%s" % (
         calib.gate, calib.mean_patch_len, calib.predictor_params,

@@ -51,7 +51,7 @@ def _device(dev: str) -> str:
 
 
 def entropy_calib(dev: str, budget_nt: int, seed: int = 17) -> EntropyCalib:
-    return calibrate_entropy(SPLIT_8080, device=dev, target_patch_len=8,
+    return calibrate_entropy(SPLIT_8080, device=dev, target_patch_len=6,
                              seed=seed, budget_nt=budget_nt, batch_size=256)
 
 

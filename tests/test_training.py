@@ -222,7 +222,7 @@ def test_patch_count_calibration_gpu(tmp_path):
     """Contract 5.4: fixed/random/entropy patch counts match the calib."""
     p = _make_parquet(tmp_path, n=400, max_len=200)
     calib = calibrate_entropy(p, device="cuda:0", budget_nt=300_000,
-                              batch_size=64, target_patch_len=8)
+                              batch_size=64, target_patch_len=6)
     assert calib.mean_patch_len >= 1
     # P1 fixed length tracks the calibrated mean.
     pol_fixed = _patch_policy_for_arm(tc.resolved_config("P1", 17),

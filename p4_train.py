@@ -57,7 +57,7 @@ def entropy_calib_for_arm(arm_id: str, device: str) -> EntropyCalib | None:
     if not l2 and arm_id not in ("P1", "P2", "P3"):
         return None
     return calibrate_entropy(SPLIT_8080, device=device,
-                             target_patch_len=6 if l2 else 8,
+                             target_patch_len=6,  # contract 3.2: mean patch length=6 (owner 2026-08-31)
                              seed=17, budget_nt=ENTROPY_BUDGET_NT, batch_size=256)
 
 

@@ -72,8 +72,8 @@ def test_blt_fixed_boundary(tmp_path):
     ckpt = _make_ckpt(tmp_path, "P1")
     a = InternalBLTAdapter("P1", 17, ckpt, device="cuda:0", cfg=_tiny_blt_cfg("P1"))
     bnd = a._boundary("ACGUACGUACGU", 0)
-    # mean_patch_len=4 -> boundary at positions 0,4,8
-    assert bnd == [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+    # contract 3.2: P1 fixed-6 -> boundary at positions 0,6 (length 12)
+    assert bnd == [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
     lp = a.log_prob_next_base("ACG", "U")
     assert torch.isfinite(torch.tensor(lp)) and lp <= 0.0
     # leading base uniform prior
@@ -119,3 +119,12 @@ def test_score_arm_blt(tmp_path):
     assert res["valid_nt_count"] == 8 + 4
     assert torch.isfinite(torch.tensor(res["bpn"]))
     assert res["cpu_fallback_count"] == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_blt_B1_fixed1_boundary(tmp_path):
+    """Bridge B1 must replay patch-size=1 (contract 3.2.1), not fixed-6."""
+    ckpt = _make_ckpt(tmp_path, "B1")
+    a = InternalBLTAdapter("B1", 17, ckpt, device="cuda:0", cfg=_tiny_blt_cfg("B1"))
+    bnd = a._boundary("ACGUACGUACGU", 0)
+    assert bnd == [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]

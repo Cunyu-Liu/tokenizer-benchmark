@@ -256,7 +256,7 @@ def build_model(cfg: RunConfig):
             n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
             max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
             tied_embed=cfg.embed.tied, patcher=None,
-            default_patch_len=8)
+            default_patch_len=6)
     raise ValueError("unknown backbone %s" % cfg.arm.backbone)
 
 

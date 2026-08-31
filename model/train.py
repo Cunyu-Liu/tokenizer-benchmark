@@ -50,7 +50,7 @@ def build_model_for_cfg(cfg, device: str):
             n_layers=cfg.arch.n_layers, n_heads=cfg.arch.n_heads,
             max_len=cfg.arch.max_len, embed_dim=cfg.embed.embed_dim,
             tied_embed=cfg.embed.tied, patcher=None,
-            default_patch_len=cfg.arch.d_model and 8)
+            default_patch_len=cfg.arch.d_model and 6)
     return m.to(device)
 
 
@@ -72,7 +72,7 @@ def _patch_policy_for_arm(cfg, calib: EntropyCalib | None = None,
             # Bridge B1 (contract 3.2.1): BLT with patch-size=1 (every nt is
             # its own patch), not the entropy-calibrated mean used by P1.
             return PatchPolicy(kind="fixed", patch_len=1)
-        plen = int(round(calib.mean_patch_len)) if calib else 8
+        plen = 6  # contract 3.2 fixed-6 (owner 2026-08-31)
         return PatchPolicy(kind="fixed", patch_len=max(1, plen))
     if t == "random_patch":
         if p2_policy is not None:

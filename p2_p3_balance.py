@@ -208,7 +208,7 @@ def main():
     assert torch.cuda.is_available(), "CUDA required"
 
     # Train-only entropy calibration (frozen; same as P1/P2/P3 training).
-    calib = calibrate_entropy(SPLIT_8080, device=dev, target_patch_len=8,
+    calib = calibrate_entropy(SPLIT_8080, device=dev, target_patch_len=6,
                               seed=17, budget_nt=ENTROPY_BUDGET_NT, batch_size=256)
     # Fit P2 q (train-only) -> returns fitted policy + coverage.
     p2_policy, cov = fit_p2_q(calib, SPLIT_8080, device=dev,

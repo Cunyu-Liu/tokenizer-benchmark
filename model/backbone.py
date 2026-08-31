@@ -173,7 +173,7 @@ class BLTCausalLM(nn.Module):
     """
     def __init__(self, vocab_size, d_model, n_layers, n_heads,
                  max_len=4096, dropout=0.0, tied_embed=True, embed_dim=None,
-                 patcher=None, default_patch_len=8, use_checkpoint=True):
+                 patcher=None, default_patch_len=6, use_checkpoint=True):
         super().__init__()
         self.d_model = d_model
         self.use_checkpoint = use_checkpoint
