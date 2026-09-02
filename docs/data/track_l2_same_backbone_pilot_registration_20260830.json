@@ -5,7 +5,7 @@
  "queue_slot": {
   "position": "OPTIONAL_ENHANCEMENT_QUEUE",
   "priority": "MEDIUM",
-  "status": "APPROVED_OWNER_2026-08-30",
+  "status": "CANCELLED_OWNER_2026-09-02",
   "dependencies": [
    "reuse of evaluator (codec / continuation), PatchPolicy boundary abstraction and P2/P3 balance-gate plumbing (model/patch.py, p2_p3_balance.py)",
    "independent re-preregistration required before any formal (seeded) execution, identical to Track L promotion rule",
@@ -16,13 +16,18 @@
  "track_l2": {
   "id": "L2_SAME_BACKBONE_DYNAMIC_SEGMENTATION_INPUT",
   "name": "同一条 Flat 骨干上的动态分段输入 pilot（斩断“架构特异性”质疑）",
-  "status": "APPROVED_PILOT_STAGE_A",
+  "status": "CANCELLED_BEFORE_ANY_RUN",
   "scientific_question": "在完全相同的 Flat Transformer 骨干上，输入侧分别采用“静态词表”（NUC 对照）与“变长 patch + 学习过的 patch 编码”（动态分段输入），分段方式本身是否带来可检测的效应？",
   "purpose": "直接回应评审“结论是否只是 BLT 架构特异”的质疑：若本 pilot 中动态分段相对静态 NUC 的效应方向与 BLT 系（P1-P3）一致，则架构特异性担忧被证伪；若不一致，如实报告为发现，不得事后调整主张",
   "design": {
    "backbone": "复用 F1 的 Flat 骨干（同参数/同序列顺序/同 exposure 口径），输入侧替换为 patch 序列建模",
    "input_scheme": "变长 patch：以因果熵阈值（train-only 校准、复用 P3 冻结策略）划分为主方案；固定 patch-length（P1 风格）与 matched-random（P2 风格）作对照；patch 经由可学习的 patch 编码器映射为 token 表示后再进入 Flat Transformer",
-   "arms_draft": ["L2-NUC（静态对照，= F1 基线复用）", "L2-fixed-patch", "L2-random-patch（可选）", "L2-entropy-patch（主处理）"],
+   "arms_draft": [
+    "L2-NUC（静态对照，= F1 基线复用）",
+    "L2-fixed-patch",
+    "L2-random-patch（可选）",
+    "L2-entropy-patch（主处理）"
+   ],
    "budget_seed": "尚未固定：run 数、valid-nt 预算、seed 集合、FLOP 检查点口径留待 amendment 明细（预案：1 development pilot 起步，与 Track L 的 PILOT 规则一致）"
   },
   "constraints": [
@@ -40,5 +45,12 @@
   "evidence_boundary": "敏感性/诊断证据：用于答复“BLT 架构特异性”质疑；不得单独作为“动态分段普遍优于静态”的正式主张",
   "if_skipped": "不阻塞核心论文（CORE_PAPER_SCOPE=33 runs 不变）；移除架构无关性辩护，保留受控规则效应主张",
   "effect_on_core": "NONE_NOT_IN_CORE_33"
+ },
+ "cancellation": {
+  "decided_utc": "2026-09-02T06:23:11Z",
+  "decided_by": "owner",
+  "reason": "2026-09-02 audit: PatchInputFlatCausalLM computes the same open-patch forward as the P arms bit-for-bit (tests/test_open_patch_and_exposure.py::test_l2_patched_input_matches_blt_forward), so the registered L2 pilot would duplicate P1-P3 at a smaller budget. Owner cancelled before any GPU run; zero compute spent.",
+  "effect": "no L2 run is launched; code retained as equivalence evidence",
+  "git": "amendment 2026-09-02 (follow-up), benchmark-v1"
  }
 }

@@ -92,3 +92,22 @@
 - E2E: F1 s17 real checkpoint reproduces bit-identical logits through the new
   BLT(patch=1) forward; F7 smoke under the fix consumes 60,811 nt for a 60,000
   nt budget (previously ~6x that in raw nt).
+
+
+## Follow-up owner decision (2026-09-02, same session)
+
+1. **Track L2: CANCELLED before any run.** With the open-patch forward,
+   `PatchInputFlatCausalLM` is bit-identical to the P-arm forward
+   (test-enforced); the registered pilot would duplicate P1-P3 at smaller
+   budget. Registration marked `CANCELLED_OWNER_2026-09-02` /
+   `CANCELLED_BEFORE_ANY_RUN`; zero GPU compute spent; code retained as
+   equivalence evidence. A future L2 would need a genuinely different
+   parameterisation (e.g. a learnable patch encoder) and a fresh prospective
+   amendment.
+2. **Single-GPU training constraint: KEPT** (2026-08-28 owner rule stands:
+   max 1 training process / 1 physical GPU at any time). The ~6-month
+   re-closure horizon under this constraint is accepted ("慢慢跑").
+3. **Execution order** (scheduler-driven, no manual queue changes):
+   re-run of the six superseded F cells (F2/F3/F6/F7) and the remaining
+   F1/F4/F5 seeds first (E_R is the intact primary deliverable), then the
+   P1-P3 re-runs under the open-patch forward. B1 s17 finishes undisturbed.
