@@ -144,6 +144,33 @@ class InternalBLTAdapter(RNAARAdapter):
         return logits.float()
 
     # --- scoring callbacks (RNAARAdapter contract) ---
+    def all_log_probs_next_base(self, seq: str) -> list[list[float]]:
+        """Per-position exact causal 4-way log-softmax for a whole sequence.
+
+        For sequences within context_nt, a SINGLE open-patch forward gives
+        every position's conditional p(x_{i+1} | x_<=i): the trunk mask and
+        the running means are causal, so suffix positions cannot influence
+        prefix logits (equal to the per-prefix path in exact arithmetic).
+        Element k is the distribution for the base at index k+1 given
+        seq[:k+1]; len == len(seq) - 1 (base 0 has no context and is scored
+        with the uniform prior by the caller, mirroring the per-prefix path).
+        Sequences longer than context_nt keep the exact per-prefix
+        rolling-window semantics (O(T^2) but rare: only the >4096 nt bin).
+        """
+        canon = self.canonicalize(seq)
+        if len(canon) <= 1:
+            return []
+        if len(canon) > self.context_nt:
+            return [self.log_probs_next_base(canon[:i])
+                    for i in range(1, len(canon))]
+        ids = [BASE_TO_IDX[b] for b in canon]
+        seq_id = _seq_id(canon)
+        bnd = self._boundary(canon, seq_id)
+        logits = self._forward_logits(ids, bnd)          # (1, T, vocab)
+        lp = F.log_softmax(logits[0], dim=-1)            # (T, vocab)
+        return [[float(lp[i, v].item()) for v in range(self.vocab)]
+                for i in range(lp.shape[0] - 1)]
+
     def log_prob_next_base(self, prefix: str, nxt: str) -> float:
         """Exact causal per-base log p(nxt | prefix) for a BLT arm.
 

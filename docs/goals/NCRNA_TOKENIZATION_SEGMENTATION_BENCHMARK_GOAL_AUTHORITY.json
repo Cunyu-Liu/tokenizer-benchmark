@@ -3,7 +3,7 @@
     "document": "NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V3.md",
     "version": "V3",
     "status": "ACTIVE",
-    "sha256": "337fbdd89b1c908d3b59e401980b894108ac89b440c78dd21c09fafa5a2f4c65"
+    "sha256": "7056f477e3c47873eab191043a47631ee2be903c2630cba555ac0daaf252adbf"
   },
   "supersedes": {
     "version": "V2",
@@ -15,7 +15,7 @@
     "local_mirror": "/Users/liucunyu/Documents/Codex/2026-08-08/volumes-orico-disc-blt-blt-code-2/outputs/NCRNA_TOKENIZATION_SEGMENTATION_BENCHMARK_GOAL_V3.md"
   },
   "byte_identity_verified": {
-    "server_sha256": "337fbdd89b1c908d3b59e401980b894108ac89b440c78dd21c09fafa5a2f4c65",
+    "server_sha256": "7056f477e3c47873eab191043a47631ee2be903c2630cba555ac0daaf252adbf",
     "mirror_sha256": "PENDING_LOCAL_MIRROR_SYNC",
     "identical": "PENDING"
   },

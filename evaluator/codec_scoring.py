@@ -199,9 +199,23 @@ def canonical_codec_score_blt(adapter, sequences) -> dict:
     n_sequences = 0
     for seq in sequences:
         canon = canonicalize_seq(seq)
-        for i, nxt in enumerate(canon):
-            lp = adapter.log_probs_next_base(canon[:i])
-            probs = _probs_from_logprobs(lp)
+        if not canon:
+            continue
+        # Single-forward batched path (amendment 2026-09-02): with the
+        # open-patch forward, one causal pass yields every position's exact
+        # conditional — replaces the O(T^2) per-prefix recomputation.
+        # Base 0 keeps the adapter no-context prior (per-prefix "" path;
+        # the real BLT adapter returns uniform there).
+        probs = _probs_from_logprobs(adapter.log_probs_next_base(""))
+        cb, qb = _encode_with_cdf(enc, probs, BASE_TO_IDX[canon[0]], total)
+        canonical_nll_bits += cb
+        quantized_nll_bits += qb
+        batched = getattr(adapter, "all_log_probs_next_base", None)
+        all_lp = (batched(canon) if batched is not None
+                  else [adapter.log_probs_next_base(canon[:i])
+                        for i in range(1, len(canon))])
+        for i, nxt in enumerate(canon[1:]):
+            probs = _probs_from_logprobs(all_lp[i])
             cb, qb = _encode_with_cdf(enc, probs, BASE_TO_IDX[nxt], total)
             canonical_nll_bits += cb
             quantized_nll_bits += qb

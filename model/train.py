@@ -15,6 +15,7 @@ import time
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .arms import ArmSpec
 from .backbone import FlatCausalLM, BLTCausalLM, PatchInputFlatCausalLM
@@ -163,9 +164,21 @@ def train(cfg, data_path, device="cuda:0", batch_size=32,
                     bnd = gpu_policy.boundaries_batch(tok)
                 else:
                     bnd = _tensor(batch, device, "boundary").float()
-                logits, loss = model(tok, bnd, targets=tgt)
+                logits, _ = model(tok, bnd, targets=None)
             else:
-                logits, loss = model(tok, targets=tgt)
+                logits, _ = model(tok, targets=None)
+            # nt-weighted CE (amendment 2026-09-02): a multi-nt token
+            # contributes proportionally to the nt it covers, so the per-nt
+            # objective is identical across tokenizers.
+            w = torch.tensor(batch.get("nt_weights") or batch["targets"],
+                             dtype=torch.float32, device=device).view(-1)
+            tv = tgt.view(-1)
+            m = (tv != IGNORE)
+            w = torch.where(m, w, torch.zeros_like(w))
+            ce = F.cross_entropy(
+                logits.view(-1, logits.size(-1)).float(), tv,
+                ignore_index=IGNORE, reduction="none")
+            loss = (ce * w).sum() / w.sum().clamp(min=1.0)
         if loss is None:
             continue
         opt.zero_grad(set_to_none=True)
@@ -249,13 +262,19 @@ def validate_on_split(cfg, model, data_path, device="cuda:0",
                     bnd = gpu_policy.boundaries_batch(tok)
                 else:
                     bnd = _tensor(batch, device, "boundary").float()
-                logits, loss = model(tok, bnd, targets=tgt)
+                logits, _ = model(tok, bnd, targets=None)
             else:
-                logits, loss = model(tok, targets=tgt)
-            if loss is None:
-                continue
+                logits, _ = model(tok, targets=None)
+            w = torch.tensor(batch.get("nt_weights") or batch["targets"],
+                             dtype=torch.float32, device=device).view(-1)
+            tv = tgt.view(-1)
+            m = (tv != IGNORE)
+            w = torch.where(m, w, torch.zeros_like(w))
+            ce = F.cross_entropy(
+                logits.view(-1, logits.size(-1)).float(), tv,
+                ignore_index=IGNORE, reduction="none")
             vnt = count_valid_nt(batch)
-            total_nll += float(loss.item()) * vnt
+            total_nll += float((ce * w).sum().item())
             total_nt += vnt
             n_batches += 1
             if total_nt >= val_nt:

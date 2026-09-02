@@ -134,17 +134,18 @@ def build_arm_tokenizer(path: str, arm: ArmSpec):
     return tok
 
 
-def _window(seq: str, context_nt: int, tok) -> tuple[list[int], list[int]]:
+def _window(seq: str, context_nt: int, tok) -> tuple[list[int], list[int], list[int]]:
     """Return (input_ids, targets) for one context window of a sequence."""
     ids = tok.encode(seq)
     if len(ids) <= 1:
-        return [], []
+        return [], [], []
     ctx = ids[:-1]
     tgt = ids[1:]
     if len(ctx) > context_nt:
         ctx = ctx[-context_nt:]
         tgt = tgt[-context_nt:]
-    return ctx, tgt
+    w = tok.token_nt_counts(tgt)
+    return ctx, tgt, w
 
 
 def iter_train_batches(path: str, cfg, boundary_provider=None,
@@ -170,7 +171,7 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
     context_nt = cfg.context_nt
     pf = pq.ParquetFile(path)
 
-    batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+    batch_tok, batch_ign, batch_bndry, batch_seqcnt, batch_w = [], [], [], [], []
     cur_max = 0
     batches = 0
 
@@ -180,7 +181,9 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
         T = max(len(x) for x in batch_tok)
         tok_ids = [_pad(x, T) for x in batch_tok]
         ign = [_pad(x, T, ignore=True) for x in batch_ign]
-        out = {"token_ids": tok_ids, "targets": ign, "_seq_count": list(batch_seqcnt)}
+        out = {"token_ids": tok_ids, "targets": ign,
+               "nt_weights": [_pad(x, T) for x in batch_w],
+               "_seq_count": list(batch_seqcnt)}
         if boundary_provider is not None:
             out["boundary"] = [_pad(b, T) for b in batch_bndry]
         return out
@@ -213,10 +216,12 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                         batches += 1
                         if max_batches is not None and batches >= max_batches:
                             return
-                    batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+                    batch_tok, batch_ign, batch_bndry, batch_seqcnt, batch_w = (
+                        [], [], [], [], [])
                     cur_max = 0
                 batch_tok.append(ctx)
                 batch_ign.append(tgt)
+                batch_w.append([1] * len(tgt))
                 # P3 entropy computes boundaries on GPU from the nt batch, so
                 # the dataset emits no per-sequence boundary when provider is
                 # None (training loop derives them online).
@@ -229,7 +234,7 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                     batch_bndry.append(
                         boundary_provider.boundary(c, len(c), _seq_id(c))[:-1])
             else:
-                cc, tt = _window(seq, context_nt, tok)
+                cc, tt, ww = _window(seq, context_nt, tok)
                 if not cc:
                     continue
                 L = len(cc)
@@ -240,10 +245,12 @@ def iter_train_batches(path: str, cfg, boundary_provider=None,
                         batches += 1
                         if max_batches is not None and batches >= max_batches:
                             return
-                    batch_tok, batch_ign, batch_bndry, batch_seqcnt = [], [], [], []
+                    batch_tok, batch_ign, batch_bndry, batch_seqcnt, batch_w = (
+                        [], [], [], [], [])
                     cur_max = 0
                 batch_tok.append(cc)
                 batch_ign.append(tt)
+                batch_w.append(ww)
             cur_max = max(cur_max, L)
             batch_seqcnt.append(1)
     b = flush()
@@ -259,5 +266,13 @@ def _pad(ids: list[int], length: int, ignore: bool = False) -> list[int]:
 
 
 def count_valid_nt(batch) -> int:
-    """Real (non-ignore) target positions in a batch."""
+    """Real (non-ignore) target NUCLEOTIDES in a batch (amendment 2026-09-02).
+
+    Uses per-target nt weights when present (each real nt counted exactly
+    once, regardless of how many nt a token covers); falls back to counting
+    target positions for legacy batches without weights.
+    """
+    if "nt_weights" in batch:
+        return int(sum(sum(w for w, v in zip(rw, rt) if v != IGNORE)
+                       for rw, rt in zip(batch["nt_weights"], batch["targets"])))
     return sum(1 for row in batch["targets"] for v in row if v != IGNORE)

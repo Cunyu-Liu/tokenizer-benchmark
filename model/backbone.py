@@ -163,6 +163,38 @@ class EntropyPatcher(nn.Module):
         return torch.sigmoid(self.head(out).squeeze(-1))  # boundary prob per pos
 
 
+
+def open_patch_running_mean(embed_out, boundary):
+    """Per-position open-patch mean embedding (exact causal, no leak).
+
+    Position i's value is the mean of the nucleotide embeddings from its
+    patch start s_i up to i (inclusive). The running means within a patch are
+    an invertible linear reparameterisation of the raw per-nt embeddings
+    (m_k*(k-s+1) - m_{k-1}*(k-s) = emb[x_k]), so no information is discarded;
+    crucially the value at i never contains x_j for j > i (amendment
+    2026-09-02: train/eval causal-input alignment).
+    """
+    B, T, E = embed_out.shape
+    starts = (boundary > 0.5).long()
+    starts[:, 0] = 1
+    idx = torch.arange(T, device=embed_out.device).view(1, T).expand(B, T)
+    marker = torch.where(starts > 0, idx, torch.full_like(idx, -1))
+    last_start = torch.cummax(marker, dim=1).values          # B,T patch starts
+    cnt = (idx - last_start + 1).clamp(min=1).float()        # open length
+    e32 = embed_out.float()
+    csum = torch.cumsum(e32, dim=1)
+    cs_shift = torch.cat([torch.zeros_like(csum[:, :1]), csum[:, :-1]], dim=1)
+    seg_sum = csum - torch.gather(
+        cs_shift, 1, last_start.unsqueeze(-1).expand(-1, -1, E))  # sum emb[s..i]
+    pooled = seg_sum / cnt.unsqueeze(-1)
+    # length-1 patches (incl. the whole B1 patch=1 bridge) must be
+    # BIT-identical to the raw embedding: cumsum differencing loses
+    # the last ULP, which would break B1 == Flat equivalence.
+    solo = (cnt.unsqueeze(-1) == 1.0)
+    pooled = torch.where(solo, e32, pooled)
+    return pooled.to(embed_out.dtype)
+
+
 class BLTCausalLM(nn.Module):
     """P-arm: patched latent Transformer with a boundary predictor.
 
@@ -197,43 +229,35 @@ class BLTCausalLM(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.normal_(m.weight, std=0.02)
 
-    def _segments(self, nt_ids, boundary):
-        """Boundary[b,i] in {0,1}: whether position i starts a new patch."""
-        B, T = nt_ids.shape
-        starts = (boundary > 0.5).long()
-        starts[:, 0] = 1
-        seg_ids = torch.cumsum(starts, dim=1) - 1
-        return seg_ids
-
     def forward(self, nt_ids, boundary, targets=None):
+        """Open-patch causal LM forward (amendment 2026-09-02).
+
+        Runs the SAME trunk as FlatCausalLM over all T nt positions; the only
+        difference is the input parameterisation: position i sees the open
+        patch running mean (mean of its patch's nt embeddings from the patch
+        start up to i). This is exactly the causal input the per-base
+        evaluator conditions on, so training optimises the scored quantity
+        with no within-patch future-nt leak and no train/eval mismatch.
+        logits[:, i] is the conditional for x_{i+1}.
+        """
         B, T = nt_ids.shape
-        seg = self._segments(nt_ids, boundary)
-        # patch embedding = mean of nucleotide embeddings in segment
-        mask = F.one_hot(seg, num_classes=seg.max() + 1).permute(0, 2, 1).float()
-        seq_emb = self.embed_head.embed(nt_ids)  # B,T,emb_dim
-        patch_emb = mask @ seq_emb  # B, n_patch, emb_dim
-        patch_emb = self.embed_head.up(patch_emb)  # B, n_patch, d_model
-        n_patch = patch_emb.size(1)
-        x = patch_emb + self.pos_emb[:, :n_patch, :]
+        seq_emb = self.embed_head.embed(nt_ids)          # B,T,emb_dim
+        pooled = open_patch_running_mean(seq_emb, boundary)
+        x = self.embed_head.up(pooled) + self.pos_emb[:, :T, :]
         for blk in self.blocks:
             if self.use_checkpoint and self.training:
                 x = ckpt(blk, x, use_reentrant=False)
             else:
                 x = blk(x)
         x = self.ln_f(x)
-        # unfold patch logits back to nt positions
-        h = self.embed_head.down(x)          # B, n_patch, emb_dim
-        logits_patch = self.embed_head.head(h)  # B, n_patch, vocab
-        # for each nt position, use its patch's logits (gather on patch dim)
-        vocab = logits_patch.size(-1)
-        per_nt = torch.gather(
-            logits_patch, 1, seg.unsqueeze(-1).expand(-1, -1, vocab))  # B,T,vocab
+        h = self.embed_head.down(x)
+        logits = self.embed_head.head(h)                 # B,T,vocab
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
-                per_nt.view(-1, per_nt.size(-1)), targets.view(-1),
+                logits.view(-1, logits.size(-1)), targets.view(-1),
                 ignore_index=-100)
-        return per_nt, loss
+        return logits, loss
 
 class PatchInputFlatCausalLM(FlatCausalLM):
     """L2 pilot (approved amendment 2026-08-30, Track L2 Stage A).
@@ -246,35 +270,29 @@ class PatchInputFlatCausalLM(FlatCausalLM):
     Boundaries come from a PatchPolicy (fixed / random / entropy) at call time.
     """
 
-    def _segments(self, nt_ids, boundary):
-        B, T = nt_ids.shape
-        starts = (boundary > 0.5).long()
-        starts[:, 0] = 1
-        return torch.cumsum(starts, dim=1) - 1
-
     def forward(self, nt_ids, boundary, targets=None):
+        """Open-patch forward, identical computation to BLTCausalLM.forward.
+
+        Track L2 shares the Flat trunk/embedding/head and differs from F1 only
+        in input parameterisation (boundary-reset running means), same as the
+        P arms (see open_patch_running_mean docstring and amendment
+        2026-09-02).
+        """
         B, T = nt_ids.shape
-        seg = self._segments(nt_ids, boundary)
-        mask = F.one_hot(seg, num_classes=seg.max() + 1).permute(0, 2, 1).float()
-        seq_emb = self.embed_head.embed(nt_ids)     # B,T,emb_dim
-        patch_emb = mask @ seq_emb                  # B,n_patch,emb_dim (mean pool)
-        patch_emb = self.embed_head.up(patch_emb)   # B,n_patch,d_model
-        n_patch = patch_emb.size(1)
-        x = patch_emb + self.pos_emb[:, :n_patch, :]
+        seq_emb = self.embed_head.embed(nt_ids)
+        pooled = open_patch_running_mean(seq_emb, boundary)
+        x = self.embed_head.up(pooled) + self.pos_emb[:, :T, :]
         for blk in self.blocks:
             if self.use_checkpoint and self.training:
                 x = ckpt(blk, x, use_reentrant=False)
             else:
                 x = blk(x)
         x = self.ln_f(x)
-        h = self.embed_head.down(x)                 # B,n_patch,emb_dim
-        logits_patch = self.embed_head.head(h)      # B,n_patch,vocab
-        vocab = logits_patch.size(-1)
-        per_nt = torch.gather(
-            logits_patch, 1, seg.unsqueeze(-1).expand(-1, -1, vocab))  # B,T,vocab
+        h = self.embed_head.down(x)
+        logits = self.embed_head.head(h)
         loss = None
         if targets is not None:
             loss = F.cross_entropy(
-                per_nt.view(-1, per_nt.size(-1)), targets.view(-1),
+                logits.view(-1, logits.size(-1)), targets.view(-1),
                 ignore_index=-100)
-        return per_nt, loss
+        return logits, loss
